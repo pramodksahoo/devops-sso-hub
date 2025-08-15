@@ -1,228 +1,349 @@
-# DevOps SSO Dashboard
+# SSO Hub - DevOps Tools Single Sign-On Platform
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/your-org/devops-sso-dashboard)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
-[![TypeScript](https://img.shields.io/badge/typescript-5.0-blue.svg)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/react-18-blue.svg)](https://reactjs.org/)
-[![NestJS](https://img.shields.io/badge/nestjs-10-red.svg)](https://nestjs.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green.svg)](https://nodejs.org/)
+[![Fastify](https://img.shields.io/badge/Fastify-4.27.0-blue.svg)](https://fastify.io/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-7+-red.svg)](https://redis.io/)
 
-A comprehensive **Single Sign-On (SSO) dashboard** for DevOps tools with **Keycloak integration**, built with a **microservices architecture** using **NestJS backend** and **React frontend**. This platform provides centralized access management, real-time health monitoring, and comprehensive analytics for DevOps toolchains.
+## 🚀 Overview
 
-## 🎯 Project Overview
+**SSO Hub** is a comprehensive Single Sign-On (SSO) platform designed to integrate with 11 major DevOps tools, providing centralized authentication, user management, and seamless access control across your entire DevOps ecosystem.
 
-### Purpose
-The DevOps SSO Dashboard serves as a unified access control and monitoring platform for DevOps tools, enabling organizations to:
-- **Centralize authentication** across multiple DevOps tools
-- **Monitor tool health** and performance in real-time
-- **Track user activity** and access patterns
-- **Manage role-based permissions** for different user groups
-- **Provide analytics** on tool usage and system performance
-- **Agentic AI & Many More Features comming soon** ....
+### 🎯 What Problem Does It Solve?
 
-### Key Objectives
-- **Security**: Implement robust SSO with Keycloak and role-based access control
-- **Scalability**: Microservices architecture for independent scaling
-- **Monitoring**: Real-time health checks and performance analytics
-- **User Experience**: Modern, responsive interface with intuitive navigation
-- **Integration**: Seamless integration with existing DevOps toolchains
+- **Authentication Fragmentation**: Eliminates the need to manage separate credentials for each DevOps tool
+- **Access Control Complexity**: Centralizes user permissions and role management
+- **Security Gaps**: Provides consistent security policies and audit trails across all tools
+- **User Experience**: Single login provides access to all integrated DevOps tools
+- **Compliance**: Maintains comprehensive audit logs for regulatory compliance
 
-## 🏗️ System Architecture
+### 🛠️ Supported DevOps Tools
 
-### High-Level Architecture Diagram
+| Tool | Purpose | Integration Type |
+|------|---------|------------------|
+| **GitHub** | Repository Management | OIDC, Webhooks, API |
+| **GitLab** | Project Management | OIDC, Webhooks, API |
+| **Jenkins** | Build Automation | OIDC, Webhooks, API |
+| **Argo CD** | Deployment Management | OIDC, Webhooks, API |
+| **Terraform** | Infrastructure as Code | OIDC, Webhooks, API |
+| **SonarQube** | Code Quality | OIDC, Webhooks, API |
+| **Grafana** | Monitoring Dashboards | OIDC, Webhooks, API |
+| **Prometheus** | Metrics Collection | OIDC, Webhooks, API |
+| **Kibana** | Log Analysis | OIDC, Webhooks, API |
+| **Snyk** | Security Scanning | OIDC, Webhooks, API |
+| **Jira/ServiceNow** | Issue Tracking | OIDC, Webhooks, API |
 
+## 🏗️ High-Level Architecture
 
->![Architecture Diagram](architecture-diagram.svg) *High-Level Architecture Diagram*
+```mermaid
+flowchart TD
 
+%% ---------- Styles (use : not =) ----------
+classDef frontend fill:#E3F2FD,stroke:#1565C0,stroke-width:1px,color:#0D47A1
+classDef gateway  fill:#FFE0B2,stroke:#EF6C00,stroke-width:1px,color:#E65100
+classDef auth     fill:#FFCDD2,stroke:#C62828,stroke-width:1px,color:#B71C1C
+classDef core     fill:#C8E6C9,stroke:#2E7D32,stroke-width:1px,color:#1B5E20
+classDef data     fill:#BBDEFB,stroke:#1565C0,stroke-width:1px,color:#0D47A1
+classDef external fill:#E1BEE7,stroke:#6A1B9A,stroke-width:1px,color:#4A148C
 
-### Detailed Service Architecture
+%% ---------- Frontend ----------
+subgraph F[Frontend Layer]
+  FE[React Frontend<br/>Port 3000]:::frontend
+end
 
+%% ---------- Gateway ----------
+subgraph G[Gateway Layer]
+  GW[NGINX Gateway<br/>OpenResty + lua-resty-openidc]:::gateway
+end
 
->![Service Architecture](Service-architecture.svg) *High-Level Service Architecture*
+%% ---------- Authentication ----------
+subgraph A[Authentication Layer]
+  AUTHBFF[Auth-BFF Service<br/>Port 3002]:::auth
+  KC[Keycloak OIDC<br/>Port 8080]:::auth
+end
 
+%% ---------- Core Services ----------
+subgraph C[Core Services Layer]
+  TH[Tools Health<br/>Port 3004]:::core
+  ANA[Analytics Service<br/>Port 3010]:::core
+  AUD[Audit Service<br/>Port 3009]:::core
+  CAT[Catalog Service<br/>Port 3006]:::core
+  LDAP[LDAP Sync<br/>Port 3012]:::core
+  ADMIN[Admin Config<br/>Port 3005]:::core
+  USER[User Service<br/>Port 3003]:::core
+  POLICY[Policy Service<br/>Port 3013]:::core
+  NOTIFY[Notifier<br/>Port 3014]:::core
+  WEBHOOK[Webhook Ingress<br/>Port 3007]:::core
+  PROV[Provisioning<br/>Port 3011]:::core
+end
 
-### Data Flow Architecture
+%% ---------- Data ----------
+subgraph D[Data Layer]
+  PG[(PostgreSQL 15<br/>Port 5432)]:::data
+  REDIS[(Redis Cache 7<br/>Port 6379)]:::data
+end
 
+%% ---------- External Tools ----------
+subgraph X[External Tools]
+  GH[GitHub]:::external
+  GL[GitLab]:::external
+  JENK[Jenkins]:::external
+  ARGO[Argo CD]:::external
+  TERR[Terraform]:::external
+  SONAR[SonarQube]:::external
+  GRAF[Grafana]:::external
+  PROM[Prometheus]:::external
+  KIB[Kibana]:::external
+  SNYK[Snyk]:::external
+  JIRA[Jira / ServiceNow]:::external
+end
 
->![Data Flow Architecture](data-flow-architecture.svg) *High-Level Data Flow Architecture*
+%% ---------- Connections ----------
+FE --> GW
+GW --> AUTHBFF
+AUTHBFF --> KC
 
+GW --> TH
+GW --> ANA
+GW --> AUD
+GW --> CAT
+GW --> LDAP
+GW --> ADMIN
+GW --> USER
+GW --> POLICY
+GW --> NOTIFY
+GW --> WEBHOOK
+GW --> PROV
 
-## 🚀 Features
+TH --> PG
+ANA --> PG
+AUD --> PG
+CAT --> PG
+LDAP --> PG
+ADMIN --> PG
+USER --> PG
+POLICY --> PG
+NOTIFY --> PG
+WEBHOOK --> PG
+PROV --> PG
 
-### 🔐 Authentication & Authorization
-- **Single Sign-On (SSO)**: Seamless authentication with Keycloak
-- **Multi-Factor Authentication**: Enhanced security with MFA support
-- **Role-Based Access Control**: Fine-grained permissions based on user roles
-- **Session Management**: Secure session handling with Redis
-- **Token Validation**: JWT token validation and refresh mechanisms
+CAT --> REDIS
+USER --> REDIS
 
-### 👥 User Management
-- **User Profiles**: Comprehensive user profile management
-- **Group Management**: Create and manage user groups
-- **Role Assignment**: Assign roles and permissions to users
-- **User Activation/Deactivation**: Control user access
-- **Password Management**: Secure password policies and reset functionality
+ADMIN --> GH
+ADMIN --> GL
+ADMIN --> JENK
+ADMIN --> ARGO
+ADMIN --> TERR
+ADMIN --> SONAR
+ADMIN --> GRAF
+ADMIN --> PROM
+ADMIN --> KIB
+ADMIN --> SNYK
+ADMIN --> JIRA
+```
 
-### 🛠️ Tools Integration
-- **DevOps Tools Management**: Centralized management of DevOps tools
-- **Health Monitoring**: Real-time health checks for integrated tools
-- **SSO Link Generation**: Automatic SSO link generation for tools
-- **Access Control**: Role-based access to different tools
-- **Tool Categories**: Organized tool management by categories
-- **Webhook Support**: Handle tool events and notifications
+## 🔄 System Design & Workflow
 
-### 📊 Analytics & Monitoring
-- **Usage Analytics**: Track tool usage patterns and user activity
-- **Audit Logging**: Comprehensive audit trails for all actions
-- **Performance Metrics**: Monitor system performance and response times
-- **Health Dashboards**: Real-time health status of all services
-- **Custom Reports**: Generate custom analytics reports
+### Authentication Flow
 
-### 🔧 System Administration
-- **System Configuration**: Centralized system settings management
-- **Service Health Monitoring**: Monitor all microservices health
-- **Database Management**: Database health and performance monitoring
-- **Log Management**: Centralized logging and log analysis
-- **Backup & Recovery**: Automated backup and recovery procedures
+>![Data Flow Architecture](docs/data-flow-architecture.svg) *High-Level Data Flow Architecture*
 
-## 🛠️ Technology Stack
+### Tool Integration Workflow
 
-### Frontend Technologies
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **React** | 18.x | Frontend framework |
-| **TypeScript** | 5.x | Type-safe JavaScript |
-| **Vite** | 4.x | Build tool and dev server |
-| **Tailwind CSS** | 3.x | Utility-first CSS framework |
-| **Shadcn/ui** | Latest | Component library |
-| **React Router** | 6.x | Client-side routing |
-| **TanStack Query** | 4.x | Data fetching and caching |
-| **Axios** | 1.x | HTTP client |
+>![Tool Intigration Workflow](docs/toolintigration-workflow.svg) *High-Level Tool Integration Workflow*
 
-### Backend Technologies
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **NestJS** | 10.x | Backend framework |
-| **TypeScript** | 5.x | Type-safe JavaScript |
-| **TypeORM** | 0.3.x | Database ORM |
-| **PostgreSQL** | 15.x | Primary database |
-| **Redis** | 7.x | Caching and sessions |
-| **JWT** | Latest | Token-based authentication |
-| **Helmet** | Latest | Security middleware |
-| **Class Validator** | Latest | Request validation |
+## 🔐 Security Architecture
 
-### Infrastructure & DevOps
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **Docker** | 20.x+ | Containerization |
-| **Docker Compose** | 2.x | Multi-container orchestration |
-| **Nginx** | Latest | Reverse proxy and load balancer |
-| **Keycloak** | 22.x | Identity and access management |
-| **BuildKit** | Latest | Fast Docker builds |
-| **Health Checks** | Built-in | Service monitoring |
-
-### Development Tools
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **ESLint** | Latest | Code linting |
-| **Prettier** | Latest | Code formatting |
-| **Husky** | Latest | Git hooks |
-| **Jest** | Latest | Testing framework |
-| **Swagger** | Latest | API documentation |
-
-## 🔒 Security Considerations
-
-### Authentication Security
-- **Multi-Factor Authentication**: Support for MFA across all services
-- **Token Security**: Secure JWT token handling with proper expiration
-- **Session Security**: Redis-based session management with encryption
-- **Password Security**: Bcrypt hashing with configurable salt rounds
-- **Account Lockout**: Protection against brute force attacks
+### Authentication & Authorization
+- **OIDC Integration**: Industry-standard OpenID Connect with Keycloak
+- **PKCE Flow**: Proof Key for Code Exchange for enhanced security
+- **Session Management**: Secure httpOnly cookies with configurable expiration
+- **Role-Based Access Control**: Granular permissions per tool and service
+- **Identity Propagation**: HMAC-signed headers for service-to-service communication
 
 ### Data Protection
-- **Input Validation**: Comprehensive request validation using class-validator
-- **SQL Injection Prevention**: Parameterized queries with TypeORM
-- **XSS Protection**: Content Security Policy and input sanitization
-- **CSRF Protection**: Cross-site request forgery prevention
+- **Input Validation**: Zod schema validation for all API inputs
+- **SQL Injection Prevention**: Parameterized queries and ORM usage
+- **XSS Protection**: Content Security Policy headers
+- **Rate Limiting**: Configurable request throttling per service
+- **CORS Configuration**: Strict origin validation
+
+### Compliance & Auditing
+- **Audit Logging**: Complete activity trail for all services
+- **Compliance Frameworks**: SOX, GDPR, SOC2 support
 - **Data Encryption**: Sensitive data encryption at rest and in transit
+- **Access Logging**: Comprehensive access attempt logging
 
-### Network Security
-- **HTTPS Enforcement**: All communications over HTTPS
-- **CORS Configuration**: Proper Cross-Origin Resource Sharing setup
-- **Rate Limiting**: Protection against API abuse
-- **Request Validation**: Comprehensive request validation middleware
-- **Security Headers**: Helmet.js for security headers
+## 🚀 Key Features
 
-### Access Control
-- **Role-Based Access Control**: Fine-grained permissions system
-- **Resource-Level Permissions**: Tool-specific access control
-- **Audit Logging**: Complete audit trail for all actions
-- **Session Management**: Secure session handling and timeout
-- **API Security**: Secure API endpoints with proper authentication
+### 🔑 Single Sign-On
+- **Unified Authentication**: One login for all DevOps tools
+- **Seamless Integration**: Native OIDC support across all tools
+- **Session Management**: Persistent sessions with automatic renewal
+- **Logout Propagation**: Single logout clears all tool sessions
 
-### Compliance & Monitoring
-- **Audit Trails**: Complete logging of all user actions
-- **Security Monitoring**: Real-time security event monitoring
-- **Data Retention**: Configurable data retention policies
-- **Backup Security**: Encrypted backups with secure storage
-- **Incident Response**: Security incident response procedures
+### 🛠️ Tool Management
+- **Centralized Catalog**: Single source of truth for all tool configurations
+- **Health Monitoring**: Real-time status monitoring for all integrated tools
+- **Provisioning Automation**: Template-based resource creation
+- **Webhook Processing**: Centralized event handling and routing
+
+### 📊 Analytics & Reporting
+- **Usage Analytics**: Comprehensive usage metrics across all tools
+- **Performance Monitoring**: Service health and performance tracking
+- **Custom Reports**: Configurable reporting and data export
+- **Cross-Tool Insights**: Unified view of DevOps ecosystem
+
+### 🔒 Security & Compliance
+- **Policy Management**: Centralized access control policies
+- **Audit Trails**: Complete activity logging for compliance
+- **Role Mapping**: SSO Hub roles to tool-specific roles
+- **Security Monitoring**: Real-time security event detection
+
+## 🏃‍♂️ Quick Start
+
+### Prerequisites
+- Docker and Docker Compose
+- Node.js 20+
+- PostgreSQL 15+
+- Redis 7+
+
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd agent-devops-sso
+```
+
+### 2. Environment Configuration
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
+
+### 3. Start Services
+```bash
+docker-compose up -d
+```
+
+### 4. Access the Application
+- **Frontend**: http://localhost:3000
+- **Keycloak Admin**: http://localhost:8080
+- **API Documentation**: http://localhost:3006/docs (Catalog Service)
+
+## 📚 Documentation
+
+For detailed information about each service, see the [docs/](./docs/) directory:
+
+- [Microservices Overview](./docs/microservices-overview.md)
+- [Auth-BFF Service](./docs/auth-bff-documentation.md)
+- [Catalog Service](./docs/catalog-service-documentation.md)
+- [Tools Health Service](./docs/tools-health-service-documentation.md)
+- [Provisioning Service](./docs/provisioning-service-documentation.md)
+- [Analytics Service](./docs/analytics-service-documentation.md)
+- [Audit Service](./docs/audit-service-documentation.md)
+- [Webhook Ingress Service](./docs/webhook-ingress-service-documentation.md)
+- [LDAP Sync Service](./docs/ldap-sync-service-documentation.md)
+- [Admin Config Service](./docs/admin-config-service-documentation.md)
+- [User Service](./docs/user-service-documentation.md)
+- [Policy Service](./docs/policy-service-documentation.md)
+- [Notifier Service](./docs/notifier-service-documentation.md)
+
+## 🏗️ Technology Stack
+
+### Core Technologies
+- **Runtime**: Node.js 20+
+- **Framework**: Fastify 4.27.0
+- **Database**: PostgreSQL 15+
+- **Cache**: Redis 7+
+- **Authentication**: Keycloak OIDC
+- **Containerization**: Docker & Docker Compose
+
+### Key Libraries
+- **Validation**: Zod 3.22.4
+- **Logging**: Pino 8.17.2
+- **API Documentation**: Swagger/OpenAPI 3.0
+- **Security**: @fastify/helmet, @fastify/cors
+- **Rate Limiting**: @fastify/rate-limit
+
+## 🔧 Configuration
+
+### Environment Variables
+```bash
+# Core Configuration
+NODE_ENV=production
+LOG_LEVEL=info
+
+# Database
+DATABASE_URL=postgresql://user:pass@localhost:5432/sso_hub
+REDIS_URL=redis://localhost:6379
+
+# Keycloak OIDC
+OIDC_CLIENT_ID=sso-hub-client
+OIDC_CLIENT_SECRET=your-secret
+OIDC_REDIRECT_URI=http://localhost:3002/auth/callback
+
+# Security
+SESSION_SECRET=your-session-secret
+IDENTITY_HEADER_SECRET=your-hmac-secret
+```
+
+## 📈 Monitoring & Health Checks
+
+### Health Endpoints
+Each service provides health monitoring endpoints:
+- **`/healthz`**: Basic health status
+- **`/readyz`**: Service readiness with dependency checks
+
+### Example Health Check
+```bash
+# Check all services health
+curl http://localhost:3002/healthz  # Auth-BFF
+curl http://localhost:3006/healthz  # Catalog
+curl http://localhost:3004/healthz  # Tools Health
+curl http://localhost:3011/healthz  # Provisioning
+```
 
 ## 🤝 Contributing
 
-### Development Setup
-1. **Fork the repository** and clone your fork
-2. **Install dependencies** for all services
-3. **Set up environment variables** using the provided template
-4. **Start the development environment** using Docker Compose
-5. **Run tests** to ensure everything is working
-
-### Code Standards
-- **TypeScript**: Use TypeScript for all new code
-- **ESLint**: Follow the project's ESLint configuration
-- **Prettier**: Use Prettier for code formatting
-- **Testing**: Write tests for new features
-- **Documentation**: Update documentation for API changes
-
-### Pull Request Process
-1. **Create a feature branch** from the main branch
-2. **Make your changes** following the coding standards
-3. **Write tests** for new functionality
-4. **Update documentation** as needed
-5. **Submit a pull request** with a clear description
-
-### Commit Guidelines
-- Use conventional commit messages
-- Include issue numbers when applicable
-- Write clear, descriptive commit messages
-- Keep commits focused and atomic
-
-### Review Process
-- All pull requests require review
-- Ensure all tests pass
-- Verify documentation is updated
-- Check for security implications
-- Ensure code follows project standards
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## 📄 License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📞 Support
+## 🆘 Support
 
-- **Documentation**: [API Documentation](./API_DOCUMENTATION.md)
-- **Deployment**: [Deployment Guide](./DEPLOYMENT_GUIDE.md)
-- **Issues**: [GitHub Issues](https://github.com/pramodksahoo/jenkins-production/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/pramodksahoo/jenkins-production/discussions)
+- **Documentation**: [docs/](./docs/) directory
+- **Issues**: GitHub Issues
+- **Discussions**: GitHub Discussions
 
-## 🙏 Acknowledgments
+## 🗺️ Roadmap
 
-- **NestJS Team** for the excellent backend framework
-- **React Team** for the frontend framework
-- **Keycloak Community** for the identity management solution
-- **Docker Team** for containerization technology
-- **All Contributors** who have helped improve this project
+### Phase 1 (Current)
+- ✅ Core microservices architecture
+- ✅ OIDC authentication integration
+- ✅ Basic tool integration and health monitoring
+- ✅ Webhook processing and provisioning
+
+### Phase 2 (Next)
+- 🔄 Advanced analytics and reporting
+- 🔄 Enhanced security features
+- 🔄 Performance optimization
+- 🔄 Advanced monitoring and alerting
+
+### Phase 3 (Future)
+- 🔮 AI-powered insights and optimization
+- 🔮 Advanced workflow automation
+- 🔮 Machine learning integration
+- 🔮 Enterprise-grade features
 
 ---
 
-**Built with ❤️ for the DevOps community**
+**SSO Hub** - Unifying your DevOps ecosystem with secure, centralized authentication and management.
 
