@@ -7,473 +7,871 @@
 
 ### Business Use Cases and Functional Requirements
 - **System Notifications**: Send notifications for system events and alerts
-- **User Notifications**: Deliver user-specific notifications and alerts
-- **Tool Integration**: Send notifications from all integrated DevOps tools
-- **Alert Management**: Manage and escalate critical alerts
-- **Notification Channels**: Support multiple notification channels (email, Slack, webhook)
-- **Notification Templates**: Use templates for consistent notification formatting
-- **Delivery Tracking**: Track notification delivery and user engagement
+- **Multi-Channel Delivery**: Support for Email, Slack, Webhook, and future channels (SMS, Teams)
+- **Tool Integration**: Send notifications from all 11 integrated DevOps tools
+- **Template Management**: Use templates for consistent notification formatting
+- **Queue Processing**: Asynchronous notification processing with Redis queuing
+- **Delivery Tracking**: Track notification delivery status and retry failed deliveries
+- **Escalation Management**: Handle critical alert escalation paths
+- **Performance Optimization**: Sub-2-second notification processing
 
 ### Service Boundaries and Responsibilities
-- **Notification Processing**: Process and format notifications
-- **Channel Management**: Manage different notification channels
-- **Template Management**: Handle notification templates
-- **Delivery Management**: Ensure reliable notification delivery
-- **User Preferences**: Respect user notification preferences
-- **Alert Escalation**: Handle critical alert escalation
+- **Notification Processing**: Process and format notifications using templates
+- **Channel Management**: Manage different notification channels (Email, Slack, Webhook)
+- **Template Management**: Handle notification templates for all tool types
+- **Queue Management**: Redis-based queuing with retry logic and escalation
+- **Delivery Management**: Ensure reliable notification delivery with tracking
+- **Audit Integration**: Log all notification activities to audit service
 
 ## Architecture Documentation
 
 ### High-Level Architecture Diagram
 ```
 ┌─────────────┐    ┌──────────────┐    ┌─────────────┐
-│   Frontend  │───▶│   Notifier  │───▶│ PostgreSQL  │
-│             │    │   Service   │    │             │
+│   Services  │───▶│   Notifier  │───▶│ PostgreSQL  │
+│  (11 Tools) │    │   Service   │    │             │
 └─────────────┘    └──────────────┘    └─────────────┘
-                          │
-                          ▼
-                   ┌──────────────┐
-                   │ Notification │
-                   │   Processor  │
-                   └──────────────┘
-                          │
-                          ▼
-                   ┌──────────────┐
-                   │   Channel    │
-                   │   Manager    │
-                   └──────────────┘
-                          │
-                          ▼
-                   ┌──────────────┐
-                   │   External   │
-                   │   Channels   │
-                   │ (Email, etc.)│
+                          │                    │
+                          ▼                    │
+                   ┌──────────────┐           │
+                   │    Redis     │           │
+                   │   Queuing    │           │
+                   └──────────────┘           │
+                          │                    │
+                          ▼                    │
+                   ┌──────────────┐           │
+                   │ Notification │           │
+                   │  Channels    │           │
+                   │ (Email/Slack │           │
+                   │  /Webhook)   │           │
+                   └──────────────┘           │
+                          │                    │
+                          ▼                    │
+                   ┌──────────────┐           │
+                   │ Audit Service│◀──────────┘
+                   │   Logging    │
                    └──────────────┘
 ```
 
-### Component Relationships and Interactions
-1. **Frontend Integration**: Receives notification requests and preferences
-2. **Notification Processor**: Processes and formats notifications
-3. **Channel Manager**: Manages different notification channels
-4. **Template Manager**: Handles notification templates
-5. **Delivery Manager**: Ensures reliable notification delivery
-6. **Database Manager**: Handles notification data persistence
+### Technology Stack
+- **Framework**: Fastify 4.27.0 with TypeScript support
+- **Database**: PostgreSQL for notification storage and templates
+- **Caching**: Redis for notification queuing and processing
+- **Template Engine**: Handlebars for dynamic content generation
+- **Validation**: Zod for comprehensive input validation
+- **Documentation**: OpenAPI/Swagger with interactive UI
+- **Security**: Helmet, CORS, rate limiting, input validation
+- **Monitoring**: Health checks, metrics, audit logging
 
-### Design Patterns Implemented
-- **Processor Pattern**: Notification processing pipeline
-- **Channel Pattern**: Multiple notification channel support
-- **Template Pattern**: Notification template management
-- **Repository Pattern**: Data access abstraction layer
-- **Observer Pattern**: Event-driven notification processing
+## API Reference
 
-## Technical Specifications
+### Base URL
+```
+http://localhost:3014
+```
 
-### Technology Stack and Frameworks
-- **Runtime**: Node.js 20+
-- **Web Framework**: Fastify 4.27.0
-- **Database**: PostgreSQL with @fastify/postgres
-- **Documentation**: Swagger/OpenAPI 3.0
-- **Security**: @fastify/helmet, @fastify/rate-limit
-- **Validation**: Zod 3.22.4
-- **Logging**: Pino 8.17.2
-- **Notification Engine**: Custom notification processing engine
+### Authentication
+All API endpoints (except health checks) require identity headers:
+- `x-user-sub`: User identifier
+- `x-user-email`: User email address
+- `x-user-roles`: Comma-separated user roles
 
-### Programming Language and Version
-- **Language**: JavaScript (CommonJS)
-- **Node.js Version**: 20.0.0+
-- **Package Manager**: npm
+### Health Check Endpoints
 
-### Database Technologies
-- **Primary Database**: PostgreSQL 15+
-- **Notification Data**: Notification records and delivery status
-- **Template Data**: Notification templates and configurations
-- **User Preferences**: User notification preferences
+#### Basic Health Check
+```http
+GET /healthz
+```
 
-### External Libraries and Dependencies
+**Response:**
 ```json
 {
-  "fastify": "^4.27.0",
-  "@fastify/cors": "^9.0.1",
-  "@fastify/helmet": "^11.1.1",
-  "@fastify/rate-limit": "^9.1.0",
-  "@fastify/postgres": "^5.2.2",
-  "@fastify/swagger": "^8.14.0",
-  "@fastify/swagger-ui": "^2.1.0",
-  "pino": "^8.17.2",
-  "zod": "^3.22.4",
-  "nodemailer": "^6.9.7",
-  "uuid": "^9.0.1"
+  "status": "healthy",
+  "timestamp": "2025-01-16T08:00:00.000Z",
+  "version": "1.0.0"
 }
 ```
 
-## API Documentation
-
-### Complete Endpoint Specifications
-
-#### Health Check Endpoints
+#### Readiness Check
 ```http
-GET /healthz
 GET /readyz
 ```
 
-#### Notification Management Endpoints
-```http
-POST /api/notifications
-GET /api/notifications
-GET /api/notifications/:id
-PUT /api/notifications/:id
-DELETE /api/notifications/:id
-```
-
-#### Notification Delivery Endpoints
-```http
-POST /api/notifications/send
-GET /api/notifications/delivery/:id
-GET /api/notifications/delivery/status
-```
-
-#### Template Management Endpoints
-```http
-GET /api/templates
-GET /api/templates/:id
-POST /api/templates
-PUT /api/templates/:id
-DELETE /api/templates/:id
-```
-
-#### Channel Management Endpoints
-```http
-GET /api/channels
-GET /api/channels/:id
-POST /api/channels
-PUT /api/channels/:id
-DELETE /api/channels/:id
-POST /api/channels/:id/test
-```
-
-### Request/Response Schemas
-
-#### Notification Request Schema
+**Response:**
 ```json
 {
-  "notification_id": "notif-123",
-  "type": "alert",
-  "priority": "high",
-  "title": "Security Alert - Unauthorized Access Attempt",
-  "message": "Multiple failed login attempts detected from IP 192.168.1.100",
-  "recipients": ["admin@example.com", "security@example.com"],
-  "channels": ["email", "slack"],
-  "template_id": "security-alert",
-  "metadata": {
-    "source": "auth-bff",
-    "event_id": "evt-456",
-    "timestamp": "2024-01-01T00:00:00.000Z",
-    "severity": "critical"
+  "status": "ready",
+  "timestamp": "2025-01-16T08:00:00.000Z",
+  "dependencies": {
+    "database": {
+      "database": "healthy",
+      "timestamp": "2025-01-16T08:00:00.000Z"
+    },
+    "channels": {
+      "email": {
+        "enabled": false,
+        "configured": false
+      },
+      "slack": {
+        "enabled": false,
+        "configured": false
+      },
+      "webhook": {
+        "enabled": true,
+        "configured": true
+      }
+    }
   },
-  "scheduled_at": "2024-01-01T00:00:00.000Z"
-}
-```
-
-#### Notification Template Schema
-```json
-{
-  "template_id": "security-alert",
-  "name": "Security Alert Template",
-  "description": "Template for security-related notifications",
-  "type": "alert",
-  "channels": ["email", "slack"],
-  "subject_template": "Security Alert: {{alert_type}}",
-  "body_template": "A {{alert_type}} has been detected.\n\nDetails:\n{{details}}\n\nTime: {{timestamp}}\nSource: {{source}}\n\nPlease take immediate action.",
-  "variables": ["alert_type", "details", "timestamp", "source"],
-  "format": "text",
-  "version": "1.0.0",
-  "created_at": "2024-01-01T00:00:00.000Z"
-}
-```
-
-#### Notification Delivery Schema
-```json
-{
-  "delivery_id": "delivery-123",
-  "notification_id": "notif-123",
-  "channel": "email",
-  "recipient": "admin@example.com",
-  "status": "delivered",
-  "attempts": 1,
-  "sent_at": "2024-01-01T00:00:00.000Z",
-  "delivered_at": "2024-01-01T00:00:01.000Z",
-  "metadata": {
-    "message_id": "msg-789",
-    "provider": "smtp",
-    "response": "250 OK"
+  "queue_status": {
+    "immediate": {
+      "waiting": 0,
+      "active": 0,
+      "completed": 0,
+      "failed": 0
+    }
   }
 }
 ```
 
-### Authentication and Authorization Details
-- **Identity Headers**: X-User-Sub, X-User-Email, X-User-Roles, X-User-Signature
-- **Admin Access**: Notification management restricted to admin users
-- **User Access**: Users can manage their notification preferences
-- **Audit Logging**: Complete notification activity audit trail
+### Notification Management Endpoints
 
-### Error Codes and Handling
+#### Create Notification
+```http
+POST /api/notifications
+```
+
+**Request Body:**
 ```json
 {
-  "400": "Bad request - invalid notification parameters",
-  "401": "Unauthorized - missing or invalid identity headers",
-  "403": "Forbidden - insufficient permissions for notification management",
-  "404": "Notification or template not found",
-  "409": "Notification conflict - validation failed",
-  "500": "Internal server error",
-  "503": "Notification service unavailable"
+  "type": "system_event",
+  "priority": "medium",
+  "title": "System Alert",
+  "message": "System event notification",
+  "recipients": ["admin@example.com"],
+  "channels": ["email", "slack"],
+  "metadata": {
+    "source": "demo"
+  }
 }
 ```
 
-## Service Dependencies
-
-### Upstream and Downstream Service Dependencies
-- **Upstream**: Auth-BFF (for identity headers), all other microservices
-- **Downstream**: PostgreSQL database, external notification channels
-- **Internal**: Notification requests from all services
-
-### Third-Party Integrations
-- **PostgreSQL**: Notification data storage and management
-- **Email Services**: SMTP/email delivery services
-- **Slack**: Slack webhook integration
-- **Webhook Services**: External webhook endpoints
-
-### Database Connections
-- **PostgreSQL**: Notifications, templates, delivery status
-- **Connection Pooling**: Optimized database connections
-
-### Message Queue Interactions
-- **Current**: Direct notification processing and delivery
-- **Future**: Async notification processing with job queues
-
-## Health & Monitoring
-
-### Health Check Endpoints
-- **`/healthz`**: Basic service health status
-- **`/readyz`**: Service readiness with database connectivity checks
-
-### Monitoring and Logging Configurations
-- **Logging**: Pino with structured JSON logging
-- **Metrics**: Notification delivery performance and success rates
-- **Health Monitoring**: Database connectivity and channel availability
-
-### Performance Metrics
-- **Notification Processing Time**: Time to process notifications
-- **Delivery Success Rate**: Percentage of successful deliveries
-- **Channel Performance**: Performance of different notification channels
-- **Template Processing**: Template rendering performance
-
-### Alerting Mechanisms
-- **Delivery Failures**: Failed notification delivery alerts
-- **Channel Issues**: Notification channel connectivity problems
-- **Template Errors**: Template rendering and processing errors
-- **Database Issues**: Database connection and performance problems
-
-## Directory Structure
-
-### Complete Folder Hierarchy
-```
-services/notifier/
-├── Dockerfile
-├── package.json
-├── README.md
-└── src/
-    ├── config.js
-    ├── index.js
-    ├── notification-processor.js
-    ├── channel-manager.js
-    ├── template-manager.js
-    └── delivery-manager.js
+#### List Notifications
+```http
+GET /api/notifications?limit=20&offset=0&type=system_event
 ```
 
-### File Organization Explanation
-- **`config.js`**: Environment-based configuration
-- **`index.js`**: Main service implementation and route definitions
-- **`notification-processor.js`**: Core notification processing logic
-- **`channel-manager.js`**: Notification channel management
-- **`template-manager.js`**: Notification template management
-- **`delivery-manager.js`**: Notification delivery management
+#### Get Notification Details
+```http
+GET /api/notifications/{notification_id}
+```
 
-### Key Configuration Files Location
-- **Environment Variables**: `.env` file or Docker environment
-- **Database Configuration**: PostgreSQL connection settings
-- **Channel Configuration**: Notification channel settings
-- **Template Configuration**: Notification template settings
+#### Send Immediate Notification
+```http
+POST /api/notifications/send
+```
 
-## Notification Capabilities
+**Template-based Request:**
+```json
+{
+  "template_name": "system-health-alert",
+  "variables": {
+    "service_name": "Policy Service",
+    "status": "Healthy",
+    "details": "All systems operational",
+    "timestamp": "2025-01-16T08:00:00.000Z",
+    "environment": "production"
+  },
+  "recipients": ["ops@example.com"],
+  "channels": ["email", "slack"]
+}
+```
 
-### Supported Notification Types
-1. **System Notifications**: System events and alerts
-2. **User Notifications**: User-specific notifications
-3. **Security Alerts**: Security and access control alerts
-4. **Tool Notifications**: DevOps tool integration notifications
-5. **Compliance Notifications**: Compliance and governance alerts
-6. **Custom Notifications**: User-defined notification types
+### Template Management Endpoints
 
-### Notification Channels
-- **Email**: SMTP-based email delivery
-- **Slack**: Slack webhook integration
-- **Webhook**: HTTP webhook delivery
-- **SMS**: SMS delivery (future)
-- **Push Notifications**: Mobile push notifications (future)
+#### List Templates
+```http
+GET /api/templates
+```
 
-### Notification Features
-- **Template System**: Reusable notification templates
-- **Variable Substitution**: Dynamic content in notifications
-- **Priority Management**: Notification priority and escalation
-- **Scheduling**: Scheduled notification delivery
-- **Retry Logic**: Automatic retry for failed deliveries
-- **Delivery Tracking**: Track notification delivery status
+#### Create Template
+```http
+POST /api/templates
+```
 
-## Security Features
+**Request Body:**
+```json
+{
+  "name": "custom-alert",
+  "type": "alert",
+  "subject_template": "🚨 {{alert_type}} - {{severity}}",
+  "body_template": "Alert: {{alert_type}}\nSeverity: {{severity}}\nDetails: {{details}}\nTime: {{timestamp}}",
+  "variables": ["alert_type", "severity", "details", "timestamp"],
+  "supported_channels": ["email", "slack", "webhook"],
+  "priority": "high",
+  "enabled": true
+}
+```
 
-### Access Control
-- **Admin-Only Access**: Notification management restricted to admins
-- **User Preferences**: Users can manage their notification preferences
-- **Channel Security**: Secure notification channel configuration
-- **Audit Logging**: Complete notification activity audit trail
+#### Test Template
+```http
+POST /api/templates/{template_id}/test
+```
 
-### Data Protection
-- **Input Validation**: Zod schema validation for all inputs
-- **Notification Encryption**: Secure storage of sensitive notifications
-- **SQL Injection Prevention**: Parameterized database queries
-- **XSS Protection**: Content security policy headers
+### Channel Management Endpoints
 
-### Notification Security
-- **Channel Authentication**: Secure notification channel authentication
-- **Delivery Security**: Secure notification delivery mechanism
-- **Access Logging**: Complete notification access logging
-- **Template Security**: Secure notification template processing
+#### List Channels
+```http
+GET /api/channels
+```
 
-## Deployment and Configuration
+#### Create Channel
+```http
+POST /api/channels
+```
 
-### Environment Variables
+**Email Channel:**
+```json
+{
+  "name": "Production Email",
+  "type": "email",
+  "description": "Production SMTP email channel",
+  "configuration": {
+    "smtp_host": "smtp.example.com",
+    "smtp_port": 587,
+    "smtp_secure": true,
+    "from_address": "notifications@example.com",
+    "from_name": "SSO Hub Notifications"
+  },
+  "enabled": true
+}
+```
+
+**Slack Channel:**
+```json
+{
+  "name": "Operations Slack",
+  "type": "slack",
+  "description": "Slack webhook for operations team",
+  "configuration": {
+    "webhook_url": "https://hooks.slack.com/services/...",
+    "channel": "#alerts",
+    "username": "SSO Hub Bot",
+    "icon_emoji": ":warning:"
+  },
+  "enabled": true
+}
+```
+
+**Webhook Channel:**
+```json
+{
+  "name": "External Webhook",
+  "type": "webhook",
+  "description": "External system webhook",
+  "configuration": {
+    "url": "https://external-system.com/webhooks/notifications",
+    "method": "POST",
+    "headers": {
+      "Authorization": "Bearer token123",
+      "Content-Type": "application/json"
+    },
+    "timeout": 30000
+  },
+  "enabled": true
+}
+```
+
+#### Test Channel
+```http
+POST /api/channels/{channel_id}/test
+```
+
+### Queue Management Endpoints
+
+#### Get Queue Statistics
+```http
+GET /api/queue/stats
+```
+
+**Response:**
+```json
+{
+  "queue_stats": {
+    "immediate": {
+      "waiting": 0,
+      "active": 1,
+      "completed": 15,
+      "failed": 0,
+      "delayed": 0
+    },
+    "delayed": {
+      "waiting": 2,
+      "active": 0,
+      "completed": 8,
+      "failed": 0,
+      "delayed": 2
+    },
+    "retry": {
+      "waiting": 0,
+      "active": 0,
+      "completed": 3,
+      "failed": 1,
+      "delayed": 0
+    }
+  },
+  "processing_status": {
+    "processing": true,
+    "queues": ["immediate", "delayed", "retry", "escalation", "batch"],
+    "redis_connected": true
+  }
+}
+```
+
+## Database Schema
+
+### Core Tables
+
+#### notifications
+- `notification_id` (UUID, Primary Key)
+- `external_id` (VARCHAR, Optional)
+- `type` (VARCHAR, NOT NULL)
+- `priority` (ENUM: low, medium, high, critical)
+- `title` (VARCHAR, NOT NULL)
+- `message` (TEXT, NOT NULL)
+- `html_message` (TEXT, Optional)
+- `recipients` (JSONB, Array of recipients)
+- `channels` (JSONB, Array of channel types)
+- `template_id` (UUID, Foreign Key)
+- `metadata` (JSONB)
+- `source_service` (VARCHAR)
+- `source_tool` (VARCHAR)
+- `user_id` (VARCHAR)
+- `scheduled_at` (TIMESTAMP)
+- `expires_at` (TIMESTAMP)
+- `retry_count` (INTEGER)
+- `max_retries` (INTEGER)
+- `status` (ENUM: pending, processing, sent, failed, expired)
+- `created_by` (VARCHAR)
+- `created_at` (TIMESTAMP)
+- `updated_at` (TIMESTAMP)
+
+#### notification_templates
+- `template_id` (UUID, Primary Key)
+- `name` (VARCHAR, UNIQUE, NOT NULL)
+- `type` (VARCHAR, NOT NULL)
+- `subject_template` (TEXT, NOT NULL)
+- `body_template` (TEXT, NOT NULL)
+- `html_template` (TEXT, Optional)
+- `variables` (JSONB, Array of variable names)
+- `supported_channels` (JSONB, Array of channel types)
+- `tool_id` (VARCHAR, Optional)
+- `priority` (ENUM: low, medium, high, critical)
+- `enabled` (BOOLEAN)
+- `version` (INTEGER)
+- `created_by` (VARCHAR)
+- `created_at` (TIMESTAMP)
+- `updated_at` (TIMESTAMP)
+
+#### notification_channels
+- `channel_id` (UUID, Primary Key)
+- `name` (VARCHAR, UNIQUE, NOT NULL)
+- `type` (ENUM: email, slack, webhook, sms, teams)
+- `description` (TEXT)
+- `configuration` (JSONB, Channel-specific config)
+- `enabled` (BOOLEAN)
+- `test_endpoint` (VARCHAR)
+- `created_by` (VARCHAR)
+- `created_at` (TIMESTAMP)
+- `updated_at` (TIMESTAMP)
+
+#### notification_deliveries
+- `delivery_id` (UUID, Primary Key)
+- `notification_id` (UUID, Foreign Key)
+- `channel_id` (UUID, Foreign Key)
+- `channel_type` (VARCHAR)
+- `recipient` (VARCHAR)
+- `status` (ENUM: pending, sent, delivered, failed, bounced)
+- `delivery_attempts` (INTEGER)
+- `last_attempt_at` (TIMESTAMP)
+- `delivered_at` (TIMESTAMP)
+- `failure_reason` (TEXT)
+- `response_data` (JSONB)
+- `external_delivery_id` (VARCHAR)
+- `created_at` (TIMESTAMP)
+- `updated_at` (TIMESTAMP)
+
+## Notification Templates
+
+### Pre-loaded Templates
+
+#### System Events
+- `system-health-alert`: Service health status changes
+- `service-startup`: Service startup notifications
+- `security-alert`: Security incidents and alerts
+- `failed-login-attempt`: Failed authentication alerts
+
+#### Tool-Specific Templates (11 Tools)
+- `github-webhook`: GitHub push events, PR status, releases
+- `gitlab-pipeline`: GitLab pipeline status, merge requests
+- `jenkins-build`: Jenkins build status, job failures
+- `argocd-sync`: ArgoCD deployment status, sync failures
+- `terraform-plan`: Terraform plan/apply status, changes
+- `sonarqube-analysis`: Quality gate results, security findings
+- `grafana-alert`: Dashboard alerts, metric thresholds
+- `prometheus-alert`: Prometheus alert manager integration
+- `kibana-alert`: Log alerts, index performance issues
+- `snyk-vulnerability`: Security vulnerability notifications
+- `jira-ticket`: Ticket updates, SLA breaches, approvals
+
+#### Compliance and Policy
+- `policy-violation`: Policy violation notifications
+- `compliance-report`: Compliance status reports
+
+### Template Variables
+
+#### Common Variables
+- `timestamp`: Current timestamp (ISO 8601)
+- `service_name`: Name of the triggering service
+- `environment`: Environment (production, staging, development)
+- `user_id`: User identifier
+- `priority`: Notification priority
+
+#### Tool-Specific Variables
+Each tool template includes specific variables relevant to that tool's events and data structures.
+
+### Template Helpers
+
+#### Date and Time
+- `{{formatDate date "format"}}`: Format dates (short, long, time, iso)
+- `{{duration milliseconds}}`: Format duration (e.g., "2m 30s")
+
+#### Text Formatting
+- `{{upper text}}`: Convert to uppercase
+- `{{lower text}}`: Convert to lowercase
+- `{{capitalize text}}`: Capitalize first letter
+
+#### Visual Indicators
+- `{{priorityBadge priority}}`: Priority badge (🔴 CRITICAL, 🟠 HIGH, etc.)
+- `{{toolIcon tool_name}}`: Tool-specific icons (📦 GitHub, 🦊 GitLab, etc.)
+- `{{envBadge environment}}`: Environment badge (🔴 PROD, 🟡 STAGE, etc.)
+
+#### Utilities
+- `{{json object}}`: JSON pretty print
+- `{{url baseUrl path}}`: URL construction
+- `{{ifEquals value1 value2}}`: Conditional logic
+
+## Notification Channels
+
+### Email Channel
+
+#### Configuration
+```json
+{
+  "smtp_host": "smtp.example.com",
+  "smtp_port": 587,
+  "smtp_secure": true,
+  "from_address": "notifications@example.com",
+  "from_name": "SSO Hub Notifications"
+}
+```
+
+#### Features
+- HTML and plain text support
+- Priority headers for high/critical notifications
+- SMTP authentication and TLS support
+- Delivery confirmation tracking
+- Bounce handling
+
+### Slack Channel
+
+#### Configuration
+```json
+{
+  "webhook_url": "https://hooks.slack.com/services/...",
+  "channel": "#alerts",
+  "username": "SSO Hub Bot",
+  "icon_emoji": ":warning:"
+}
+```
+
+#### Features
+- Rich message formatting with attachments
+- Color-coded messages based on priority
+- Mention support and channel targeting
+- Emoji and icon customization
+- Interactive components (future)
+
+### Webhook Channel
+
+#### Configuration
+```json
+{
+  "url": "https://external-system.com/webhook",
+  "method": "POST",
+  "headers": {
+    "Authorization": "Bearer token",
+    "Content-Type": "application/json"
+  },
+  "timeout": 30000
+}
+```
+
+#### Features
+- Custom HTTP methods and headers
+- HMAC signature validation
+- Retry logic with exponential backoff
+- Response data capture
+- Timeout configuration
+
+## Queue Management
+
+### Queue Types
+
+#### Immediate Queue
+- High-priority notifications
+- Critical alerts
+- Real-time processing
+
+#### Delayed Queue
+- Scheduled notifications
+- Time-based delivery
+- Future processing
+
+#### Retry Queue
+- Failed delivery retries
+- Exponential backoff
+- Maximum retry limits
+
+#### Escalation Queue
+- Critical alert escalation
+- Escalation paths
+- Management notifications
+
+#### Batch Queue
+- Bulk notification processing
+- Performance optimization
+- Rate limiting
+
+### Processing Features
+- Concurrent processing (configurable)
+- Dead letter queue for failed jobs
+- Job prioritization
+- Progress tracking
+- Performance metrics
+
+## Integration Examples
+
+### Service Integration
+
+#### From Tool Services
+```javascript
+// Send notification from tool service
+const axios = require('axios');
+
+async function sendToolNotification(eventData) {
+  try {
+    const response = await axios.post('http://notifier:3014/api/notifications/send', {
+      template_name: 'github-webhook',
+      variables: {
+        event_type: eventData.type,
+        repository: eventData.repository,
+        actor: eventData.actor,
+        action: eventData.action,
+        details: eventData.details,
+        timestamp: new Date().toISOString()
+      },
+      recipients: ['dev@example.com'],
+      channels: ['slack', 'email'],
+      priority: eventData.critical ? 'high' : 'medium',
+      metadata: {
+        tool: 'github',
+        event_id: eventData.id
+      }
+    }, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-sub': 'system',
+        'x-user-email': 'system@example.com',
+        'x-user-roles': 'system'
+      }
+    });
+    
+    console.log('Notification sent:', response.data.notification_id);
+  } catch (error) {
+    console.error('Failed to send notification:', error.message);
+  }
+}
+```
+
+#### From Webhook Ingress
+```javascript
+// Integration with webhook ingress service
+const notificationService = 'http://notifier:3014';
+
+async function processWebhookEvent(webhookData) {
+  // Determine notification template based on webhook source
+  const templateMap = {
+    'github': 'github-webhook',
+    'gitlab': 'gitlab-pipeline',
+    'jenkins': 'jenkins-build',
+    'argocd': 'argocd-sync'
+  };
+  
+  const templateName = templateMap[webhookData.source];
+  if (!templateName) return;
+  
+  // Send notification
+  await axios.post(`${notificationService}/api/notifications/send`, {
+    template_name: templateName,
+    variables: webhookData.payload,
+    recipients: webhookData.subscribers || ['ops@example.com'],
+    channels: ['slack'],
+    metadata: {
+      webhook_id: webhookData.id,
+      source: webhookData.source
+    }
+  });
+}
+```
+
+### Direct API Usage
+
+#### Create and Send Notification
+```bash
+# Create direct notification
+curl -X POST http://localhost:3014/api/notifications \
+  -H "Content-Type: application/json" \
+  -H "x-user-sub: admin-123" \
+  -H "x-user-email: admin@example.com" \
+  -H "x-user-roles: admin" \
+  -d '{
+    "type": "system_alert",
+    "priority": "high",
+    "title": "System Maintenance Required",
+    "message": "Scheduled maintenance window approaching",
+    "recipients": ["ops@example.com", "#ops-channel"],
+    "channels": ["email", "slack"],
+    "scheduled_at": "2025-01-16T20:00:00Z",
+    "metadata": {
+      "maintenance_id": "MAINT-2025-001"
+    }
+  }'
+
+# Send using template
+curl -X POST http://localhost:3014/api/notifications/send \
+  -H "Content-Type: application/json" \
+  -H "x-user-sub: admin-123" \
+  -H "x-user-email: admin@example.com" \
+  -H "x-user-roles: admin" \
+  -d '{
+    "template_name": "system-health-alert",
+    "variables": {
+      "service_name": "Database Cluster",
+      "status": "Degraded",
+      "details": "High CPU usage detected on primary node",
+      "timestamp": "2025-01-16T08:00:00Z",
+      "environment": "production"
+    },
+    "recipients": ["dba@example.com", "ops@example.com"],
+    "channels": ["email", "slack", "webhook"]
+  }'
+```
+
+## Environment Configuration
+
+### Required Environment Variables
 ```bash
 # Server Configuration
-PORT=3013
+PORT=3014
 HOST=0.0.0.0
 LOG_LEVEL=info
 
 # Database Configuration
 DATABASE_URL=postgresql://user:pass@localhost:5432/sso_hub
 
-# Email Configuration
+# Redis Configuration
+REDIS_URL=redis://localhost:6379
+REDIS_DB=1
+
+# Email Configuration (Optional)
+EMAIL_ENABLED=true
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
+SMTP_SECURE=true
 SMTP_USER=notifications@example.com
 SMTP_PASS=your-smtp-password
+EMAIL_FROM_ADDRESS=notifications@example.com
+EMAIL_FROM_NAME=SSO Hub Notifications
 
-# Slack Configuration
+# Slack Configuration (Optional)
+SLACK_ENABLED=true
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
-SLACK_CHANNEL=#alerts
+SLACK_DEFAULT_CHANNEL=#alerts
+SLACK_USERNAME=SSO Hub Bot
+SLACK_ICON_EMOJI=:warning:
 
-# Notification Configuration
+# Webhook Configuration
+WEBHOOK_ENABLED=true
+WEBHOOK_TIMEOUT=30000
+WEBHOOK_RETRY_ATTEMPTS=3
+
+# Performance Configuration
+NOTIFICATION_PROCESSING_CONCURRENCY=5
 NOTIFICATION_RETRY_ATTEMPTS=3
 NOTIFICATION_RETRY_DELAY=5000
 TEMPLATE_CACHING_ENABLED=true
-DELIVERY_TRACKING_ENABLED=true
+TEMPLATE_CACHE_TTL=3600
 
 # Security Configuration
+HMAC_SECRET=your-hmac-secret-key
+ENCRYPTION_KEY=your-32-char-encryption-key
 CORS_ORIGIN=http://localhost:3000
-RATE_LIMIT_MAX=100
-RATE_LIMIT_WINDOW=60000
+
+# Service Integration
+AUDIT_SERVICE_URL=http://audit:3009
+USER_SERVICE_URL=http://user-service:3003
+POLICY_SERVICE_URL=http://policy:3013
 ```
 
-### Docker Configuration
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-EXPOSE 3013
-CMD ["npm", "start"]
+### Docker Compose Configuration
+```yaml
+notifier:
+  build:
+    context: ./services/notifier
+    dockerfile: Dockerfile
+  container_name: sso-notifier
+  environment:
+    - NODE_ENV=production
+    - PORT=3014
+    - DATABASE_URL=postgresql://sso_user:password@postgres:5432/sso_hub
+    - REDIS_URL=redis://redis:6379
+    - REDIS_DB=1
+    # Add other environment variables as needed
+  ports:
+    - "3014:3014"
+  depends_on:
+    - postgres
+    - redis
+    - audit
+  networks:
+    - sso-network
 ```
 
-### Health Check Commands
-```bash
-# Health check
-curl http://localhost:3013/healthz
+## Performance and Monitoring
 
-# Readiness check
-curl http://localhost:3013/readyz
+### Performance Metrics
+- **Notification Processing**: < 2 seconds per notification
+- **Template Rendering**: < 50ms per template
+- **Queue Processing**: Configurable concurrency (default: 5)
+- **Delivery Success Rate**: > 99% for healthy channels
+- **Cache Hit Rate**: > 90% for template cache
 
-# List notifications
-curl http://localhost:3013/api/notifications
+### Health Monitoring
+- Service health endpoint (`/healthz`)
+- Dependency readiness check (`/readyz`)
+- Queue statistics monitoring
+- Delivery tracking and metrics
+- Error rate monitoring
 
-# Test notification channel
-curl -X POST http://localhost:3013/api/channels/email/test
-```
+### Logging and Audit
+- Structured JSON logging (Pino)
+- Comprehensive audit trail
+- Notification lifecycle tracking
+- Performance metrics logging
+- Error tracking and alerting
 
-## Performance Optimization
+## Security Features
 
-### Notification Optimization
-- **Template Caching**: Cache frequently used notification templates
-- **Batch Processing**: Efficient batch notification processing
-- **Channel Optimization**: Optimized notification channel delivery
-- **Parallel Processing**: Concurrent notification processing
+### Access Control
+- Identity header validation
+- Role-based access control
+- API rate limiting (1000 req/min)
+- Input validation (Zod schemas)
 
-### Database Optimization
-- **Indexed Queries**: Optimized database schema with proper indexes
-- **Connection Pooling**: Efficient database connection management
-- **Query Optimization**: Structured queries for performance
-- **Data Partitioning**: Notification data partitioning for large systems
+### Data Protection
+- HMAC signature validation for webhooks
+- Secure credential storage
+- SQL injection prevention
+- XSS protection (CSP headers)
 
-### Scalability Features
-- **Stateless Design**: Service can be horizontally scaled
-- **Load Distribution**: Support for multiple service instances
-- **Async Processing**: Asynchronous notification processing
-- **Channel Distribution**: Distributed notification channel management
+### Channel Security
+- TLS encryption for SMTP
+- Webhook signature validation
+- Secure API token handling
+- Rate limiting per channel
 
 ## Troubleshooting
 
 ### Common Issues
-1. **Delivery Failures**: Check notification channel configuration
-2. **Template Errors**: Verify notification template syntax
-3. **Channel Issues**: Check notification channel connectivity
-4. **Database Connection Issues**: Verify PostgreSQL connectivity
+
+#### Service Won't Start
+1. Check database connectivity
+2. Verify Redis connection
+3. Validate environment variables
+4. Check port availability (3014)
+
+#### Notifications Not Sending
+1. Verify channel configuration
+2. Check recipient addresses/URLs
+3. Review queue status
+4. Validate template syntax
+
+#### Template Errors
+1. Check template variable mapping
+2. Validate Handlebars syntax
+3. Test template rendering
+4. Review error logs
 
 ### Debug Commands
 ```bash
-# Check service logs
-docker logs notifier-service
+# Check service health
+curl http://localhost:3014/healthz
 
-# Verify database connectivity
-curl -v http://localhost:3013/readyz
+# Check service readiness
+curl -H "x-user-sub: admin" http://localhost:3014/readyz
 
-# Test notification processing
-curl -v http://localhost:3013/api/notifications
+# View service logs
+docker-compose logs notifier
 
-# Check channel status
-curl -v http://localhost:3013/api/channels
+# Check queue statistics
+curl -H "x-user-sub: admin" http://localhost:3014/api/queue/stats
+
+# Test template rendering
+curl -X POST http://localhost:3014/api/templates/{id}/test \
+  -H "Content-Type: application/json" \
+  -H "x-user-sub: admin" \
+  -d '{"variables": {"key": "value"}}'
+
+# Test channel connectivity
+curl -X POST http://localhost:3014/api/channels/{id}/test \
+  -H "x-user-sub: admin"
 ```
 
 ### Log Analysis
-- **Notification Processing**: Monitor notification processing performance
-- **Delivery Status**: Track notification delivery success rates
-- **Channel Performance**: Monitor notification channel performance
-- **Error Patterns**: Identify recurring notification issues
+- Monitor notification processing times
+- Track delivery success rates
+- Review queue depth and processing
+- Analyze error patterns and causes
 
 ## Future Enhancements
 
 ### Planned Features
-- **Advanced Notification Engine**: AI-powered notification optimization
-- **Real-time Notifications**: Live notification delivery and updates
-- **Notification Analytics**: Advanced notification effectiveness analytics
-- **Smart Notifications**: Intelligent notification routing and delivery
+- SMS notification channel
+- Microsoft Teams integration
+- Push notification support
+- Advanced escalation rules
+- A/B testing for templates
+- Analytics and reporting dashboard
+- Multi-tenant support
+- Advanced retry strategies
 
-### Integration Roadmap
-- **Phase 1**: Basic notification management and delivery (current)
-- **Phase 2**: Advanced templates and analytics
-- **Phase 3**: Real-time notifications and optimization
-- **Phase 4**: AI-powered notification platform
+### Integration Opportunities
+- Prometheus metrics export
+- Grafana dashboard templates
+- External monitoring integration
+- Advanced audit analytics
+- Machine learning for delivery optimization
 
-### Notification Evolution
-- **Current**: Basic notification management and delivery
-- **Future**: Advanced templates and analytics
-- **Advanced**: Real-time notifications and optimization
-- **Enterprise**: Enterprise-grade notification platform
+---
+
+**Notifier Service** provides comprehensive notification management for the SSO Hub platform, enabling reliable, scalable, and flexible communication across all integrated DevOps tools and services.

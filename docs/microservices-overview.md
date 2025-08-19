@@ -1,12 +1,15 @@
 # SSO Hub Microservices Overview
 
+> **Last Updated**: August 19, 2025  
+> **Status**: ✅ Production Ready - All 13 microservices implemented and functional
+
 ## Introduction
 
-SSO Hub is a comprehensive Single Sign-On (SSO) platform designed to integrate with 11 major DevOps tools. The platform is built using a microservices architecture that provides scalability, maintainability, and flexibility. This document provides an overview of all microservices in the system.
+SSO Hub is a **production-ready** Single Sign-On (SSO) platform designed to integrate with **11 major DevOps tools**. The platform is built using a modern microservices architecture that provides scalability, maintainability, and flexibility. This document provides a comprehensive overview of all 13 microservices in the system.
 
 ## Architecture Overview
 
-The SSO Hub platform consists of 12 core microservices, each responsible for specific functionality:
+The SSO Hub platform consists of **13 core microservices** plus infrastructure services, each responsible for specific functionality:
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
@@ -149,13 +152,13 @@ flowchart TD
 - **Technology**: Fastify 4.27.0, PostgreSQL, user analytics
 
 ### 11. Policy Service
-- **Port**: 3012
+- **Port**: 3013
 - **Purpose**: Access control and compliance policy management
 - **Key Features**: Policy enforcement, compliance rules, governance
 - **Technology**: Fastify 4.27.0, PostgreSQL, policy engine
 
 ### 12. Notifier Service
-- **Port**: 3013
+- **Port**: 3014
 - **Purpose**: Centralized notification and alerting
 - **Key Features**: Multi-channel notifications, templates, delivery tracking
 - **Technology**: Fastify 4.27.0, PostgreSQL, Nodemailer, Slack integration
