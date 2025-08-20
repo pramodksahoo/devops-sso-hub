@@ -6,13 +6,15 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7+-red.svg)](https://redis.io/)
 [![Production Ready](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)](https://github.com)
-[![Microservices](https://img.shields.io/badge/Architecture-13%20Microservices-blue.svg)](https://microservices.io/)
+[![Microservices](https://img.shields.io/badge/Architecture-14%20Microservices-blue.svg)](https://microservices.io/)
 
 ## 🚀 Overview
 
-**SSO Hub** is a **production-ready** Single Sign-On (SSO) platform with **13 microservices** designed to integrate with **11 major DevOps tools**, providing centralized authentication, user management, seamless access control, comprehensive monitoring, analytics, and compliance across your entire DevOps ecosystem.
+**SSO Hub** is a **production-ready** Single Sign-On (SSO) platform with **14 microservices** designed to integrate with **11 major DevOps tools**, providing centralized authentication, user management, **seamless zero-click access**, comprehensive monitoring, analytics, and compliance across your entire DevOps ecosystem.
 
-> **Current Status**: ✅ **Production Ready** - All 13 microservices implemented and functional
+> **Current Status**: ✅ **Production Ready** - All 14 microservices implemented and functional
+> 
+> **NEW**: 🎉 **Seamless SSO** - Launch Grafana and other tools with zero additional clicks!
 
 ### 🎯 What Problem Does It Solve?
 
@@ -40,7 +42,7 @@
 
 ## 🏗️ Microservices Architecture
 
-### ✅ Implemented Services (13/13)
+### ✅ Implemented Services (14/14)
 
 | Service | Port | Status | Key Features |
 |---------|------|--------|--------------|
@@ -49,7 +51,7 @@
 | **User Service** | 3003 | ✅ Production | Profile management, API keys |
 | **Tools Health** | 3004 | ✅ Production | Comprehensive monitoring, alerts |
 | **Admin Config** | 3005 | ✅ Functional | Tool configuration, testing |
-| **Catalog** | 3006 | ✅ Production | Enhanced tool catalog, launch |
+| **Catalog** | 3006 | ✅ Production | Enhanced tool catalog, **seamless launch** |
 | **Webhook Ingress** | 3007 | ✅ Production | Multi-tool event processing |
 | **Audit** | 3009 | ✅ Production | Comprehensive audit trails |
 | **Analytics** | 3010 | ✅ Production | Advanced reporting, CSV export |
@@ -57,6 +59,7 @@
 | **LDAP Sync** | 3012 | ✅ Production | Directory synchronization |
 | **Policy** | 3013 | ✅ Production | Access control, compliance |
 | **Notifier** | 3014 | ✅ Production | Multi-channel alerts |
+| **Auth Proxy** | 3015 | ✅ Production | **NEW: Seamless SSO proxy** |
 
 ## 🏗️ High-Level Architecture
 
