@@ -123,24 +123,36 @@ docker-compose logs -f
 
 Built for DevOps teams who are tired of paying the "SSO Premium" and dealing with enterprise-first solutions.
 
-### 🥊 **SSO Hub vs The Competition**
+### 💡 **Why Choose SSO Hub?**
+
+**SSO Hub is built on the solid foundation of [Keycloak](https://keycloak.org) 🙏** - we extend it with DevOps-focused features, pre-configured integrations, and production-ready setup.
 
 <div align="center">
 
-| Feature | **SSO Hub** | Keycloak | Okta | Auth0 |
-|---------|-------------|----------|------|-------|
-| **⏱️ Setup Time** | ✅ **5 minutes** | ❌ Hours/Days | ❌ Cloud-only | ❌ Cloud-only |
-| **🎯 DevOps Focus** | ✅ **Built for DevOps** | ❌ Enterprise-first | ❌ Generic | ❌ Generic |
-| **💰 SSO Premium** | ✅ **Free core features** | ⚠️ Self-hosted only | ❌ $3-8/user/month | ❌ $7-23/user/month |
-| **🔌 Tool Integrations** | ✅ **11+ pre-configured** | ❌ Manual setup | ⚠️ Basic integrations | ⚠️ Basic integrations |
-| **🚀 Zero-Click Access** | ✅ **Seamless launch** | ❌ Multiple redirects | ❌ Multiple redirects | ❌ Multiple redirects |
-| **📚 DevOps Docs** | ✅ **Tool-specific guides** | ❌ Generic enterprise | ❌ Generic enterprise | ❌ Generic enterprise |
-| **🏠 Self-Hosted** | ✅ **Docker Compose ready** | ✅ Complex setup | ❌ Cloud-only | ❌ Cloud-only |
-| **🔓 Open Source** | ✅ **MIT License** | ✅ Apache 2.0 | ❌ Proprietary | ❌ Proprietary |
+| **Approach** | **SSO Hub** | **DIY Setup** | **Commercial SaaS** | **Other Open Source** |
+|-------------|-------------|----------------|-------------------|---------------------|
+| | *Batteries-Included* | *Manual Config* | *Vendor Solution* | *Generic Solution* |
+| **⏱️ Setup Complexity** | ✅ **5-minute Docker Compose** | ❌ Weeks of configuration | ⚠️ Account setup + integration | ⚠️ Hours to days setup |
+| **🎯 DevOps Integration** | ✅ **11+ tools pre-configured** | ❌ Manual integration work | ⚠️ Basic connectors | ❌ Generic integrations |
+| **💰 Total Cost** | ✅ **Free + infrastructure** | ⚠️ Time investment | ❌ $3-25/user/month | ✅ Free + setup time |
+| **🚀 Zero-Click Access** | ✅ **Seamless tool launch** | ❌ Multiple redirects | ❌ Multiple redirects | ❌ Multiple redirects |
+| **📚 DevOps Documentation** | ✅ **Tool-specific guides** | ❌ Generic docs | ❌ Generic enterprise | ⚠️ Limited DevOps focus |
+| **🏗️ Production Ready** | ✅ **Out-of-the-box** | ❌ Requires hardening | ✅ Managed service | ⚠️ Requires configuration |
+| **🔓 Vendor Freedom** | ✅ **No lock-in** | ✅ Full control | ❌ Vendor dependent | ✅ Open source |
+| **🎯 DevOps Workflows** | ✅ **CI/CD, GitOps ready** | ❌ Manual setup | ⚠️ Generic workflows | ⚠️ Manual adaptation |
 
 </div>
 
-### 💡 **Real DevOps Engineer Testimonials**
+### 🛠️ **SSO Hub = Keycloak + DevOps Superpowers**
+
+Think of SSO Hub as the **"Ubuntu of SSO"** - we take proven technology (Keycloak) and package it with:
+- **Pre-configured DevOps integrations** (Jenkins, GitLab, Kubernetes, etc.)
+- **Production-ready microservices architecture**
+- **DevOps-focused documentation and guides**  
+- **Zero-click access patterns** for your favorite tools
+- **5-minute setup** instead of weeks of configuration
+
+<!-- ### 💡 **Real DevOps Engineer Testimonials**
 
 > *"Finally, SSO that doesn't make me want to throw my laptop out the window. Setup took 5 minutes, not 5 days."*  
 > **Sarah Chen** - Senior DevOps Engineer, TechCorp
@@ -149,7 +161,7 @@ Built for DevOps teams who are tired of paying the "SSO Premium" and dealing wit
 > **Marcus Rodriguez** - Platform Engineering Lead, StartupCo
 
 > *"The Jenkins integration just works. No XML debugging at 2 AM."*  
-> **Alex Thompson** - DevOps Architect, Enterprise Inc
+> **Alex Thompson** - DevOps Architect, Enterprise Inc -->
 
 ---
 
