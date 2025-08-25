@@ -298,13 +298,44 @@ EOF
 
 print_status "Updated frontend configuration"
 
+# Update Keycloak realm configuration for external access
+if [[ "$EXTERNAL_HOST" != "localhost" ]]; then
+    print_status "Updating Keycloak realm configuration for external access..."
+    
+    # Backup the original realm file
+    cp infra/keycloak/import/realm-sso-hub.json infra/keycloak/import/realm-sso-hub.json.backup
+    
+    # Replace localhost URLs with external host in the realm configuration
+    sed -i.tmp \
+        -e "s|http://localhost:3000|${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}|g" \
+        -e "s|http://localhost:3002|${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3002|g" \
+        -e "s|http://localhost:8080|${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080|g" \
+        infra/keycloak/import/realm-sso-hub.json
+    
+    # Remove backup file
+    rm -f infra/keycloak/import/realm-sso-hub.json.tmp
+    
+    print_status "Updated Keycloak realm redirectUris and webOrigins"
+fi
+
 echo ""
 print_status "Configuration complete!"
 echo ""
 echo -e "${GREEN}Next steps:${NC}"
-echo "1. Start the services: ${BLUE}docker-compose up -d${NC}"
-echo "2. Wait for all services to be healthy (2-3 minutes)"
-echo "3. Access the application at: ${BLUE}${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}${NC}"
+if [[ "$EXTERNAL_HOST" != "localhost" ]]; then
+    echo "1. Stop current services: ${BLUE}docker-compose down${NC}"
+    echo "2. Rebuild services with new configuration: ${BLUE}docker-compose build --no-cache keycloak frontend${NC}"
+    echo "3. Start all services: ${BLUE}docker-compose up -d${NC}"
+    echo "4. Wait for all services to be healthy (2-3 minutes)"
+    echo "5. Access the application at: ${BLUE}${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}${NC}"
+    echo ""
+    echo -e "${YELLOW}💡 Quick restart commands:${NC}"
+    echo "docker-compose down && docker-compose build --no-cache keycloak frontend && docker-compose up -d"
+else
+    echo "1. Start the services: ${BLUE}docker-compose up -d${NC}"
+    echo "2. Wait for all services to be healthy (2-3 minutes)"
+    echo "3. Access the application at: ${BLUE}${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}${NC}"
+fi
 echo ""
 
 if [[ "$EXTERNAL_PROTOCOL" == "https" ]]; then
