@@ -1,0 +1,18 @@
+{
+  "name": "openid",
+  "description": "OpenID Connect built-in scope: openid",
+  "protocol": "openid-connect",
+  "attributes": {
+    "consent.screen.text": "OpenID Connect scope for: ${name}",
+    "display.on.consent.screen": "true"
+  },
+  "protocolMappers": [
+    {
+      "name": "sub",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-sub-mapper",
+      "consentRequired": false,
+      "config": {}
+    }
+  ]
+}

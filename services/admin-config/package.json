@@ -1,0 +1,43 @@
+{
+  "name": "@sso-hub/admin-config",
+  "version": "1.0.0",
+  "description": "SSO Hub Admin Configuration Service - Tool Integration Management",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "lint": "eslint src/",
+    "test": "jest"
+  },
+  "dependencies": {
+    "fastify": "^4.27.0",
+    "@fastify/cors": "^8.5.0",
+    "@fastify/swagger": "^8.14.0",
+    "@fastify/swagger-ui": "^1.10.0",
+    "zod": "^3.22.4",
+    "pino": "^8.17.2",
+    "pino-pretty": "^10.3.1",
+    "pg": "^8.11.3",
+    "redis": "^4.6.12",
+    "@fastify/redis": "^6.1.1",
+    "axios": "^1.6.2",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "eslint": "^8.55.0",
+    "jest": "^29.7.0"
+  },
+  "keywords": [
+    "sso",
+    "keycloak",
+    "admin",
+    "configuration",
+    "tools",
+    "integration"
+  ],
+  "author": "SSO Hub Team",
+  "license": "MIT"
+}

@@ -1,0 +1,58 @@
+{
+  "name": "agent-devops-sso",
+  "version": "1.0.0",
+  "description": "Open-source SSO Hub with microservices architecture",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "infra/*"
+  ],
+  "packageManager": "pnpm@8.15.0",
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "pnpm -r run dev",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r run test",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:headed": "playwright test --headed",
+    "playwright:install": "playwright install",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "migrate": "node migrate-installer.js",
+    "migrate:status": "node migrate-installer.js status",
+    "migrate:rollback": "node migrate-installer.js rollback",
+    "migrate:dry-run": "node migrate-installer.js --dry-run"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "dotenv": "^16.3.1",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "main": "test-all-tools.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "dependencies": {
+    "eslint-scope": "^7.2.2",
+    "eslint-visitor-keys": "^3.4.3",
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

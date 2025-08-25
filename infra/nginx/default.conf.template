@@ -1,0 +1,357 @@
+# Upstream backends
+upstream auth_bff_backend {
+    server auth-bff:3002;
+    keepalive 32;
+}
+
+upstream user_service_backend {
+    server user-service:3003;
+    keepalive 32;
+}
+
+upstream tools_service_backend {
+    server tools-service:3004;
+    keepalive 32;
+}
+
+upstream catalog_backend {
+    server catalog:3006;
+    keepalive 32;
+}
+
+upstream frontend_backend {
+    server frontend:3000;
+    keepalive 32;
+}
+
+upstream keycloak_backend {
+    server keycloak:8080;
+    keepalive 32;
+}
+
+# Lua initialization
+init_by_lua_block {
+    -- OIDC configuration
+    local oidc = require("resty.openidc")
+    
+    -- HMAC configuration
+    local hmac = require("resty.hmac")
+    
+    -- Set global configuration
+    ngx.shared.oidc_config = {
+        discovery = "${OIDC_DISCOVERY_URL}",
+        client_id = "${OIDC_CLIENT_ID}",
+        client_secret = "${OIDC_CLIENT_SECRET}",
+        redirect_uri = "${OIDC_REDIRECT_URI}",
+        logout_path = "${OIDC_LOGOUT_PATH}",
+        scope = "${OIDC_SCOPE}",
+        session_secret = "${SESSION_SECRET}",
+        identity_header_secret = "${IDENTITY_HEADER_SECRET}"
+    }
+}
+
+# Rate limiting zones
+limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/m;
+
+server {
+    listen 80;
+    server_name localhost;
+
+    # Security headers
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Health check endpoint (no auth required)
+    location /health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Public endpoints (no auth required)
+    location ~ ^/(favicon\.ico|robots\.txt|\.well-known) {
+        proxy_pass http://frontend_backend;
+    }
+
+    # OIDC Authentication callback
+    location /auth/callback {
+        limit_req zone=auth_limit burst=5 nodelay;
+        
+        access_by_lua_block {
+            local oidc = require("resty.openidc")
+            local opts = {
+                discovery = "${OIDC_DISCOVERY_URL}",
+                client_id = "${OIDC_CLIENT_ID}",
+                client_secret = "${OIDC_CLIENT_SECRET}",
+                redirect_uri = "${OIDC_REDIRECT_URI}",
+                scope = "${OIDC_SCOPE}",
+                session_contents = {id_token=true},
+                logout_path = "${OIDC_LOGOUT_PATH}",
+                token_endpoint_auth_method = "client_secret_post"
+            }
+            
+            local res, err = oidc.authenticate(opts)
+            if err then
+                ngx.log(ngx.ERR, "OIDC authentication failed: ", err)
+                ngx.status = 500
+                ngx.say("Authentication failed")
+                ngx.exit(500)
+            end
+            
+            -- Store user information in session
+            ngx.var.remote_user = res.id_token.sub
+            ngx.var.remote_user_email = res.id_token.email
+            ngx.var.remote_user_name = res.id_token.name or res.id_token.preferred_username
+            ngx.var.remote_user_groups = res.id_token.groups or {}
+        }
+        
+        return 302 /dashboard;
+    }
+
+    # OIDC Logout
+    location /auth/logout {
+        access_by_lua_block {
+            local oidc = require("resty.openidc")
+            local opts = {
+                discovery = "${OIDC_DISCOVERY_URL}",
+                client_id = "${OIDC_CLIENT_ID}",
+                logout_path = "${OIDC_LOGOUT_PATH}",
+                post_logout_redirect_uri = "http://$host/"
+            }
+            oidc.logout(opts)
+        }
+    }
+
+    # Authentication routes - proxy to Auth-BFF
+    location /auth/ {
+        limit_req zone=auth_limit burst=10 nodelay;
+        
+        proxy_pass http://auth_bff_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Add correlation ID
+        proxy_set_header X-Request-ID $request_id;
+    }
+
+    # Keycloak routes (public access)
+    location /realms/ {
+        proxy_pass http://keycloak_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # Handle redirects properly  
+        proxy_redirect http://keycloak:8080 http://$host;
+    }
+
+    # Keycloak admin (protected)
+    location /admin/ {
+        # OIDC authentication required
+        access_by_lua_block {
+            local oidc = require("resty.openidc")
+            local opts = {
+                discovery = "${OIDC_DISCOVERY_URL}",
+                client_id = "${OIDC_CLIENT_ID}",
+                client_secret = "${OIDC_CLIENT_SECRET}",
+                redirect_uri = "${OIDC_REDIRECT_URI}",
+                scope = "${OIDC_SCOPE}",
+                session_contents = {id_token=true}
+            }
+            
+            local res, err = oidc.authenticate(opts)
+            if err then
+                ngx.log(ngx.ERR, "OIDC authentication failed: ", err)
+                return ngx.exit(401)
+            end
+            
+            -- Check admin role
+            local groups = res.id_token.groups or {}
+            local is_admin = false
+            for i, group in ipairs(groups) do
+                if group == "admins" or group == "/admins" then
+                    is_admin = true
+                    break
+                end
+            end
+            
+            if not is_admin then
+                ngx.log(ngx.WARN, "Access denied to admin panel for user: ", res.id_token.sub)
+                return ngx.exit(403)
+            end
+        }
+        
+        proxy_pass http://keycloak_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # API routes (protected with identity headers)
+    location /api/ {
+        limit_req zone=api_limit burst=20 nodelay;
+        
+        # OIDC authentication and identity header injection
+        access_by_lua_block {
+            local oidc = require("resty.openidc")
+            local hmac = require("resty.hmac")
+            local str = require("resty.string")
+            
+            local opts = {
+                discovery = "${OIDC_DISCOVERY_URL}",
+                client_id = "${OIDC_CLIENT_ID}",
+                client_secret = "${OIDC_CLIENT_SECRET}",
+                redirect_uri = "${OIDC_REDIRECT_URI}",
+                scope = "${OIDC_SCOPE}",
+                session_contents = {id_token=true}
+            }
+            
+            local res, err = oidc.authenticate(opts)
+            if err then
+                ngx.log(ngx.ERR, "OIDC authentication failed: ", err)
+                return ngx.exit(401)
+            end
+            
+            -- Extract user information
+            local user_sub = res.id_token.sub or ""
+            local user_email = res.id_token.email or ""
+            local user_name = res.id_token.name or res.id_token.preferred_username or ""
+            local user_groups = table.concat(res.id_token.groups or {}, ",")
+            local user_roles = table.concat(res.id_token.realm_access and res.id_token.realm_access.roles or {}, ",")
+            
+            -- Create HMAC signature
+            local secret = "${IDENTITY_HEADER_SECRET}"
+            local payload = user_sub .. "|" .. user_email .. "|" .. user_name .. "|" .. user_groups .. "|" .. user_roles
+            local signature = hmac:new(secret, hmac.ALGOS.SHA256):final(payload)
+            local signature_hex = str.to_hex(signature)
+            
+            -- Set identity headers
+            ngx.req.set_header("X-User-Sub", user_sub)
+            ngx.req.set_header("X-User-Email", user_email)
+            ngx.req.set_header("X-User-Name", user_name)
+            ngx.req.set_header("X-User-Groups", user_groups)
+            ngx.req.set_header("X-User-Roles", user_roles)
+            ngx.req.set_header("X-User-Signature", signature_hex)
+        }
+        
+        # Route to appropriate service based on path
+        location /api/users/ {
+            proxy_pass http://user_service_backend/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        location /api/tools/ {
+            proxy_pass http://catalog_backend/api/tools/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        location /api/catalog/ {
+            proxy_pass http://catalog_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Default API routing
+        proxy_pass http://auth_bff_backend;
+        include /etc/nginx/proxy_params;
+    }
+
+    # Frontend routes - serve React app for SPA routing
+    location ~ ^/(dashboard|tools|profile|admin|admin-tools|launchpad|health|webhooks|audit|analytics|ldap|provisioning)(/.*)?$ {
+        # Optional OIDC authentication (don't fail if not authenticated)
+        access_by_lua_block {
+            local oidc = require("resty.openidc")
+            local opts = {
+                discovery = "${OIDC_DISCOVERY_URL}",
+                client_id = "${OIDC_CLIENT_ID}",
+                client_secret = "${OIDC_CLIENT_SECRET}",
+                redirect_uri = "${OIDC_REDIRECT_URI}",
+                scope = "${OIDC_SCOPE}",
+                session_contents = {id_token=true}
+            }
+            
+            -- Try to authenticate but don't fail if unauthenticated
+            local res, err = oidc.introspect(opts)
+            if res and res.active then
+                ngx.req.set_header("X-User-Sub", res.sub or "")
+                ngx.req.set_header("X-User-Email", res.email or "")
+                ngx.req.set_header("X-User-Authenticated", "true")
+            else
+                ngx.req.set_header("X-User-Authenticated", "false")
+            end
+        }
+        
+        proxy_pass http://frontend_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Cache control for development - force reload
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Frontend root - with optional authentication
+    location / {
+        # Optional OIDC authentication (don't fail if not authenticated)
+        access_by_lua_block {
+            local oidc = require("resty.openidc")
+            local opts = {
+                discovery = "${OIDC_DISCOVERY_URL}",
+                client_id = "${OIDC_CLIENT_ID}",
+                client_secret = "${OIDC_CLIENT_SECRET}",
+                redirect_uri = "${OIDC_REDIRECT_URI}",
+                scope = "${OIDC_SCOPE}",
+                session_contents = {id_token=true}
+            }
+            
+            -- Try to authenticate but don't fail if unauthenticated
+            local res, err = oidc.introspect(opts)
+            if res and res.active then
+                ngx.req.set_header("X-User-Sub", res.sub or "")
+                ngx.req.set_header("X-User-Email", res.email or "")
+                ngx.req.set_header("X-User-Authenticated", "true")
+            else
+                ngx.req.set_header("X-User-Authenticated", "false")
+            end
+        }
+        
+        proxy_pass http://frontend_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Cache control for development - force reload
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+        
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Error pages
+    error_page 500 502 503 504 /50x.html;
+    location = /50x.html {
+        root /usr/local/openresty/nginx/html;
+    }
+}

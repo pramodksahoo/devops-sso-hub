@@ -1,0 +1,935 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: sso-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sso_hub}
+      POSTGRES_USER: ${POSTGRES_USER:-sso_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sso_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/db-migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sso_user} -d ${POSTGRES_DB:-sso_hub}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sso-network
+
+  # Keycloak Database (separate from app db)
+  keycloak-postgres:
+    image: postgres:16-alpine
+    container_name: sso-keycloak-postgres
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: ${KC_DB_USERNAME:-keycloak_user}
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:-keycloak_password}
+    volumes:
+      - keycloak_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KC_DB_USERNAME:-keycloak_user} -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sso-network
+
+  # Redis for sessions and queues
+  redis:
+    image: redis:7-alpine
+    container_name: sso-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sso-network
+
+  # Keycloak Identity Provider (Latest Stable)
+  keycloak:
+    build:
+      context: ./infra/keycloak
+      dockerfile: Dockerfile
+    container_name: sso-keycloak
+    environment:
+      # Bootstrap admin credentials (required for container)
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_password}
+      
+      # Database configuration
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/keycloak
+      KC_DB_USERNAME: ${KC_DB_USERNAME:-keycloak_user}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-keycloak_password}
+      
+      # Network configuration (v2 format)
+      KC_HOSTNAME: ${KC_HOSTNAME:-localhost}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-forwarded}
+      
+      # External access configuration
+      KC_HOSTNAME_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}${EXTERNAL_PORT}
+      
+      # Enable health and metrics
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      
+      # Logging
+      KC_LOG_LEVEL: INFO
+      KC_HOSTNAME_DEBUG: "true"
+      
+      # Force realm import to overwrite existing
+      KC_SPI_IMPORT_REALM_STRATEGY: OVERWRITE_EXISTING
+    command: start-dev --import-realm
+    ports:
+      - "8080:8080"
+      - "9000:9000"  # Health and metrics port
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - sso-network
+
+
+  # Auth BFF Service
+  auth-bff:
+    build:
+      context: ./services/auth-bff
+      dockerfile: Dockerfile
+    container_name: sso-auth-bff
+    environment:
+      PORT: ${AUTH_BFF_PORT:-3002}
+      HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: ${NODE_ENV:-production}
+      
+      # OIDC Configuration
+      OIDC_ISSUER: http://keycloak:8080/realms/sso-hub
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-sso-hub-client}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-sso-client-secret}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3002/auth/callback}
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080/realms/sso-hub}
+      
+      # Session Configuration
+      SESSION_SECRET: ${SESSION_SECRET}
+      SESSION_COOKIE_NAME: sso_session
+      SESSION_MAX_AGE: 86400000
+      
+      # Redis Configuration  
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      
+      # Security Configuration
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      IDENTITY_HEADER_SECRET: ${IDENTITY_HEADER_SECRET}
+    ports:
+      - "3002:3002"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sso-network
+
+  # Admin Configuration Service
+  admin-config:
+    build:
+      context: ./services/admin-config
+      dockerfile: Dockerfile
+    container_name: sso-admin-config
+    environment:
+      PORT: ${ADMIN_CONFIG_PORT:-3005}
+      HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: ${NODE_ENV:-production}
+      
+      # Database Configuration
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-sso_hub}
+      POSTGRES_USER: ${POSTGRES_USER:-sso_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sso_secure_password}
+      
+      # Redis Configuration
+      REDIS_URL: redis://redis:6379
+      
+      # Keycloak Configuration
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-sso-hub}
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_secure_password_123}
+      
+      # Infisical Configuration
+      INFISICAL_URL: ${INFISICAL_URL:-http://infisical:8080}
+      INFISICAL_TOKEN: ${INFISICAL_TOKEN:-}
+      INFISICAL_PROJECT_ID: ${INFISICAL_PROJECT_ID:-}
+      
+      # Security
+      JWT_SECRET: ${ADMIN_CONFIG_JWT_SECRET:-admin-config-jwt-secret-key}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-admin-api-key-change-in-production}
+    ports:
+      - "3005:3005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      auth-bff:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3005/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - sso-network
+
+  # Frontend Application
+  frontend:
+    build:
+      context: ./apps/frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+        VITE_AUTH_BFF_URL: http://localhost:${AUTH_BFF_PORT:-3002}
+        VITE_API_BASE_URL: http://localhost:${AUTH_BFF_PORT:-3002}/api
+        VITE_WS_URL: ws://localhost:${AUTH_BFF_PORT:-3002}
+        VITE_USER_SERVICE_URL: http://localhost:${USER_SERVICE_PORT:-3003}
+        VITE_TOOLS_SERVICE_URL: http://localhost:${TOOLS_SERVICE_PORT:-3004}
+        VITE_ADMIN_CONFIG_URL: http://localhost:${ADMIN_CONFIG_PORT:-3005}
+        VITE_CATALOG_URL: http://localhost:${CATALOG_PORT:-3006}
+        VITE_WEBHOOK_INGRESS_URL: http://localhost:${WEBHOOK_INGRESS_PORT:-3007}
+        VITE_AUDIT_URL: http://localhost:${AUDIT_PORT:-3009}
+        VITE_ANALYTICS_URL: http://localhost:${ANALYTICS_PORT:-3010}
+        VITE_PROVISIONING_URL: http://localhost:${PROVISIONING_PORT:-3011}
+        VITE_LDAP_SYNC_URL: http://localhost:${LDAP_SYNC_PORT:-3012}
+        VITE_POLICY_URL: http://localhost:${POLICY_PORT:-3013}
+        VITE_NOTIFIER_URL: http://localhost:${NOTIFIER_PORT:-3014}
+        VITE_KEYCLOAK_URL: http://localhost:8080
+        VITE_GRAFANA_URL: ${GRAFANA_URL:-http://localhost:3100}
+        VITE_PROMETHEUS_URL: ${PROMETHEUS_URL:-http://localhost:9090}
+        VITE_APP_TITLE: SSO Hub
+        VITE_NODE_ENV: production
+        VITE_DEBUG_MODE: "false"
+        VITE_MOCK_API: "false"
+        VITE_ENABLE_ANALYTICS: "true"
+        VITE_ENABLE_AUDIT: "true"
+        VITE_ENABLE_PROVISIONING: "true"
+        VITE_ENABLE_LDAP_SYNC: "true"
+        VITE_ENABLE_WEBHOOKS: "true"
+        VITE_VERSION: 1.0.0
+    container_name: sso-frontend
+    environment:
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    networks:
+      - sso-network
+
+  # Phase 2: User Service
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: sso-user-service
+    environment:
+      PORT: ${USER_SERVICE_PORT:-3003}
+      HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: ${NODE_ENV:-production}
+      DATABASE_URL: ${DATABASE_URL}
+      IDENTITY_HEADER_SECRET: ${IDENTITY_HEADER_SECRET}
+      CORS_ORIGIN: ${FRONTEND_URL:-http://localhost:3000}
+      RATE_LIMIT_MAX: 100
+      RATE_LIMIT_WINDOW: "1 minute"
+    ports:
+      - "3003:3003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sso-network
+
+  # Tools Service - Phase 2
+  tools-service:
+    build:
+      context: ./services/tools-health
+      dockerfile: Dockerfile
+    container_name: sso-tools-service
+    environment:
+      PORT: ${TOOLS_SERVICE_PORT:-3004}
+      HOST: 0.0.0.0
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: ${NODE_ENV:-production}
+      
+      # Database Configuration
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sso_user}:${POSTGRES_PASSWORD:-sso_password}@postgres:5432/${POSTGRES_DB:-sso_hub}
+      
+      # Auth-BFF Integration
+      AUTH_BFF_URL: http://auth-bff:3002
+      IDENTITY_HEADER_SECRET: ${IDENTITY_HEADER_SECRET:-your-hmac-secret-here}
+      
+      # Security Configuration
+      CORS_ORIGIN: ${FRONTEND_URL:-http://localhost:3000}
+      
+      # Health Monitoring
+      HEALTH_CHECK_INTERVAL: 30000
+      HEALTH_CHECK_TIMEOUT: 5000
+      DISCOVERY_ENABLED: "true"
+      DISCOVERY_INTERVAL: 60000
+      
+      # Rate Limiting
+      RATE_LIMIT_MAX: 100
+      RATE_LIMIT_WINDOW: 60000
+    ports:
+      - "3004:3004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth-bff:
+        condition: service_started
+    networks:
+      - sso-network
+
+  # ===========================================
+  # ENHANCED CATALOG SERVICE (Phase 3)
+  # ===========================================
+  catalog:
+    build:
+      context: ./services/catalog
+      dockerfile: Dockerfile
+    container_name: sso-hub-catalog
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3006
+      - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
+      - REDIS_URL=redis://redis:6379
+      - AUTH_BFF_URL=http://auth-bff:3002
+      - CORS_ORIGIN=http://localhost:3000
+      - WEBHOOK_BASE_URL=http://localhost:3006
+      - FEATURE_DEEP_LINKING=true
+      - FEATURE_WEBHOOK_PROCESSING=true
+      - AUDIT_SERVICE_URL=http://audit:3009
+      - ANALYTICS_SERVICE_URL=http://analytics:3010
+      - FEATURE_LAUNCH_ANALYTICS=true
+      - FEATURE_TOOL_HEALTH_CHECKS=true
+      # Tool Base URLs (configurable per environment)
+      - GITHUB_BASE_URL=https://github.com
+      - GITLAB_BASE_URL=https://gitlab.com
+      - JENKINS_BASE_URL=http://localhost:8080
+      - ARGOCD_BASE_URL=http://localhost:9090
+      - TERRAFORM_BASE_URL=https://app.terraform.io
+      - SONARQUBE_BASE_URL=http://localhost:9000
+      - GRAFANA_BASE_URL=http://localhost:3001
+      - PROMETHEUS_BASE_URL=http://localhost:9090
+      - KIBANA_BASE_URL=http://localhost:5601
+      - SNYK_BASE_URL=https://snyk.io
+      - JIRA_BASE_URL=https://your-domain.atlassian.net
+      - SERVICENOW_BASE_URL=https://your-instance.service-now.com
+      # Seamless SSO configuration
+      - ENABLE_SEAMLESS_SSO=true
+      - AUTH_PROXY_URL=http://auth-proxy:3015
+    ports:
+      - "3006:3006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth-bff:
+        condition: service_started
+    networks:
+      - sso-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3006/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Webhook Ingress Service - Phase 5
+  webhook-ingress:
+    build:
+      context: ./services/webhook-ingress
+      dockerfile: Dockerfile
+    container_name: sso-webhook-ingress
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3007
+      - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+      - WEBHOOK_TIMEOUT=30000
+      - MAX_PAYLOAD_SIZE=10mb
+      - RATE_LIMIT_MAX=1000
+      - RATE_LIMIT_WINDOW=1 minute
+      - NOTIFICATION_SERVICE_URL=http://notifier:3014
+      - AUDIT_SERVICE_URL=http://audit:3009
+      - ANALYTICS_SERVICE_URL=http://analytics:3010
+      # Email notifications (configure as needed)
+      - EMAIL_NOTIFICATIONS_ENABLED=false
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_USER=notifications@example.com
+      - SMTP_PASSWORD=your-email-password
+      # Slack notifications (configure as needed)
+      - SLACK_NOTIFICATIONS_ENABLED=false
+      - SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+      - SLACK_BOT_TOKEN=xoxb-your-bot-token
+      # Teams notifications (configure as needed)
+      - TEAMS_NOTIFICATIONS_ENABLED=false
+      - TEAMS_WEBHOOK_URL=https://your-org.webhook.office.com/webhookb2/your-webhook-url
+      # Webhook notifications
+      - WEBHOOK_NOTIFICATIONS_ENABLED=true
+      - WEBHOOK_NOTIFICATION_ENDPOINT=http://localhost:3007/test-webhook
+    ports:
+      - "3007:3007"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3007/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - sso-network
+
+  # Enhanced Audit Service - Phase 6
+  audit:
+    build:
+      context: ./services/audit
+      dockerfile: Dockerfile
+    container_name: sso-audit
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3009
+      - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+      - AUDIT_RETENTION_DAYS=90
+      - AUDIT_BATCH_SIZE=1000
+      - AUDIT_FLUSH_INTERVAL_MS=5000
+      - ENABLE_REAL_TIME_PROCESSING=true
+      - RATE_LIMIT_MAX=10000
+      - RATE_LIMIT_WINDOW=1 minute
+      # Security and compliance
+      - ENABLE_PII_MASKING=false
+      - COMPLIANCE_MODE=standard
+      # Integration URLs
+      - WEBHOOK_INGRESS_URL=http://webhook-ingress:3007
+      - AUTH_BFF_URL=http://auth-bff:3002
+      - CATALOG_URL=http://catalog:3006
+      - TOOLS_HEALTH_URL=http://tools-health:3005
+    ports:
+      - "3009:3009"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3009/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - sso-network
+
+  # Enhanced Analytics Service - Phase 7
+  analytics:
+    build:
+      context: ./services/analytics
+      dockerfile: Dockerfile
+    container_name: sso-analytics
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3010
+      - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+      - ANALYTICS_RETENTION_DAYS=365
+      - BATCH_SIZE=10000
+      - AGGREGATION_INTERVAL_MINUTES=60
+      - REAL_TIME_PROCESSING=true
+      - RATE_LIMIT_MAX=1000
+      - RATE_LIMIT_WINDOW=1 minute
+      # Export configuration
+      - EXPORT_MAX_ROWS=100000
+      - EXPORT_TIMEOUT_SECONDS=300
+      - EXPORT_STORAGE_PATH=/tmp/analytics-exports
+      # Integration URLs
+      - AUDIT_SERVICE_URL=http://audit:3009
+      - CATALOG_SERVICE_URL=http://catalog:3006
+      - WEBHOOK_INGRESS_URL=http://webhook-ingress:3007
+      - TOOLS_HEALTH_URL=http://tools-health:3005
+      # Analytics features
+      - ENABLE_CACHING=true
+      - CACHE_TTL_SECONDS=300
+      - ENABLE_ANALYTICS_ALERTS=false
+      - ANONYMIZE_PERSONAL_DATA=false
+      - GDPR_COMPLIANCE_MODE=false
+    ports:
+      - "3010:3010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - analytics-exports:/tmp/analytics-exports
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3010/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - sso-network
+
+  # Provisioning Service - Phase 9
+  provisioning:
+    build:
+      context: ./services/provisioning
+      dockerfile: Dockerfile
+    container_name: sso-provisioning
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3011
+      - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+      - IDENTITY_SIGNATURE_SECRET=${IDENTITY_HEADER_SECRET}
+      # Provisioning configuration
+      - MAX_CONCURRENT_WORKFLOWS=5
+      - WORKFLOW_TIMEOUT_MINUTES=60
+      - STEP_TIMEOUT_SECONDS=300
+      - DEFAULT_RETRY_ATTEMPTS=3
+      - MAX_BULK_OPERATIONS=100
+      - BULK_BATCH_SIZE=10
+      # Rate limiting
+      - RATE_LIMIT_MAX=100
+      - RATE_LIMIT_WINDOW=1 minute
+      # Integration URLs
+      - AUDIT_SERVICE_URL=http://audit:3009
+      - CATALOG_SERVICE_URL=http://catalog:3006
+      - WEBHOOK_INGRESS_URL=http://webhook-ingress:3007
+      - TOOLS_HEALTH_URL=http://tools-service:3004
+      - ANALYTICS_SERVICE_URL=http://analytics:3010
+      # Tool API configurations (use secrets in production)
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-mock_github_token}
+      - GITLAB_TOKEN=${GITLAB_TOKEN:-mock_gitlab_token}
+      - JENKINS_TOKEN=${JENKINS_TOKEN:-mock_jenkins_token}
+      - ARGOCD_TOKEN=${ARGOCD_TOKEN:-mock_argocd_token}
+      - TERRAFORM_TOKEN=${TERRAFORM_TOKEN:-mock_terraform_token}
+      - SONARQUBE_TOKEN=${SONARQUBE_TOKEN:-mock_sonarqube_token}
+      - GRAFANA_TOKEN=${GRAFANA_TOKEN:-mock_grafana_token}
+      - KIBANA_TOKEN=${KIBANA_TOKEN:-mock_kibana_token}
+      - SNYK_TOKEN=${SNYK_TOKEN:-mock_snyk_token}
+      - JIRA_TOKEN=${JIRA_TOKEN:-mock_jira_token}
+      # Tool API base URLs
+      - GITHUB_API_BASE_URL=https://api.github.com
+      - GITLAB_API_BASE_URL=https://gitlab.com/api/v4
+      - JENKINS_API_BASE_URL=http://localhost:8080
+      - ARGOCD_API_BASE_URL=http://localhost:9090/api/v1
+      - TERRAFORM_API_BASE_URL=https://app.terraform.io/api/v2
+      - SONARQUBE_API_BASE_URL=http://localhost:9000/api
+      - GRAFANA_API_BASE_URL=http://localhost:3001/api
+      - PROMETHEUS_API_BASE_URL=http://localhost:9090/api/v1
+      - KIBANA_API_BASE_URL=http://localhost:5601/api
+      - SNYK_API_BASE_URL=https://api.snyk.io/v1
+      - JIRA_API_BASE_URL=https://your-domain.atlassian.net/rest/api/2
+      # Feature flags
+      - ROLLBACK_ENABLED=true
+      - BULK_OPERATIONS_ENABLED=true
+      - POLICY_ENFORCEMENT_ENABLED=true
+      - TEMPLATE_VALIDATION_STRICT=false
+      - CUSTOM_TEMPLATES_ENABLED=true
+    ports:
+      - "3011:3011"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      audit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3011/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - sso-network
+
+  # LDAP Sync Service - Phase 10
+  ldap-sync:
+    build:
+      context: ./services/ldap-sync
+      dockerfile: Dockerfile
+    container_name: sso-ldap-sync
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3012
+      - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+      - IDENTITY_SIGNATURE_SECRET=your-super-secret-signature-key-min-32-chars
+      # LDAP configuration
+      - LDAP_CONNECTION_TIMEOUT=30000
+      - LDAP_SEARCH_TIMEOUT=60000
+      - LDAP_MAX_CONNECTIONS=10
+      - LDAP_RECONNECT_ENABLED=true
+      # Sync configuration
+      - MAX_CONCURRENT_SYNC_JOBS=5
+      - SYNC_JOB_TIMEOUT_MINUTES=120
+      - DEFAULT_SYNC_BATCH_SIZE=100
+      - DEFAULT_RATE_LIMIT_PER_MINUTE=60
+      # Discovery configuration
+      - DISCOVERY_MAX_ENTRIES=10000
+      - DISCOVERY_PAGE_SIZE=1000
+      - DISCOVERY_TIMEOUT_MINUTES=30
+      # Cache configuration
+      - LDAP_CACHE_TTL_MINUTES=60
+      - LDAP_CACHE_CLEANUP_INTERVAL_HOURS=24
+      # Preview and dry-run
+      - PREVIEW_MAX_CHANGES=1000
+      - DRY_RUN_ENABLED=true
+      # Conflict resolution
+      - DEFAULT_CONFLICT_RESOLUTION=ldap_wins
+      - CONFLICT_DETECTION_ENABLED=true
+      # Rate limiting
+      - RATE_LIMIT_MAX=100
+      - RATE_LIMIT_WINDOW=1 minute
+      # Integration URLs
+      - AUDIT_SERVICE_URL=http://audit:3009
+      - TOOLS_HEALTH_URL=http://tools-service:3004
+      - CATALOG_SERVICE_URL=http://catalog:3006
+      - PROVISIONING_SERVICE_URL=http://provisioning:3011
+      # Tool API configurations (use secrets in production)
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-mock_github_token}
+      - GITLAB_TOKEN=${GITLAB_TOKEN:-mock_gitlab_token}
+      - JENKINS_TOKEN=${JENKINS_TOKEN:-mock_jenkins_token}
+      - ARGOCD_TOKEN=${ARGOCD_TOKEN:-mock_argocd_token}
+      - TERRAFORM_TOKEN=${TERRAFORM_TOKEN:-mock_terraform_token}
+      - SONARQUBE_TOKEN=${SONARQUBE_TOKEN:-mock_sonarqube_token}
+      - GRAFANA_TOKEN=${GRAFANA_TOKEN:-mock_grafana_token}
+      - KIBANA_TOKEN=${KIBANA_TOKEN:-mock_kibana_token}
+      - SNYK_TOKEN=${SNYK_TOKEN:-mock_snyk_token}
+      - JIRA_TOKEN=${JIRA_TOKEN:-mock_jira_token}
+      # Tool API base URLs
+      - GITHUB_API_BASE_URL=https://api.github.com
+      - GITLAB_API_BASE_URL=https://gitlab.com/api/v4
+      - JENKINS_API_BASE_URL=http://localhost:8080
+      - ARGOCD_API_BASE_URL=http://localhost:9090/api/v1
+      - TERRAFORM_API_BASE_URL=https://app.terraform.io/api/v2
+      - SONARQUBE_API_BASE_URL=http://localhost:9000/api
+      - GRAFANA_API_BASE_URL=http://localhost:3001/api
+      - PROMETHEUS_API_BASE_URL=http://localhost:9090/api/v1
+      - KIBANA_API_BASE_URL=http://localhost:5601/api
+      - SNYK_API_BASE_URL=https://api.snyk.io/v1
+      - JIRA_API_BASE_URL=https://your-domain.atlassian.net/rest/api/2
+      # Scheduler configuration
+      - SCHEDULER_ENABLED=true
+      - SCHEDULER_CHECK_INTERVAL_MINUTES=5
+      # Feature flags
+      - PREVIEW_MODE_ENABLED=true
+      - INCREMENTAL_SYNC_ENABLED=true
+      - BULK_OPERATIONS_ENABLED=true
+      - ADVANCED_MAPPING_ENABLED=true
+      # Development flags
+      - DEBUG_MODE=false
+      - MOCK_LDAP_ENABLED=false
+    ports:
+      - "3012:3012"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      audit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3012/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - sso-network
+
+  # Auth Proxy Service - Seamless SSO
+  auth-proxy:
+    build:
+      context: ./services/auth-proxy
+      dockerfile: Dockerfile
+    container_name: sso-auth-proxy
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3015
+      - REDIS_URL=redis://redis:6379
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+      - GRAFANA_URL=http://localhost:3020
+      - GRAFANA_ADMIN_USER=admin
+      - GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-grafana_admin_pass}
+      - TOKEN_TTL=300
+      - PROXY_TIMEOUT=30000
+      - ENABLE_SEAMLESS_SSO=true
+    ports:
+      - "3015:3015"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3015/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - sso-network
+
+  # Policy Service - Phase 6.5
+  policy:
+    build:
+      context: ./services/policy
+      dockerfile: Dockerfile
+    container_name: sso-policy
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3013
+      - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
+      - REDIS_URL=redis://redis:6379
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+      - IDENTITY_HEADER_SECRET=${IDENTITY_HEADER_SECRET:-your-hmac-secret-here}
+      # Policy Engine Configuration
+      - POLICY_CACHE_TTL_SECONDS=300
+      - POLICY_EVALUATION_TIMEOUT_MS=5000
+      - MAX_POLICIES_PER_EVALUATION=100
+      - ENABLE_POLICY_CACHING=true
+      - CACHE_WARM_UP_ON_START=true
+      - PARALLEL_POLICY_EVALUATION=true
+      # Security Configuration
+      - REQUIRE_IDENTITY_HEADERS=true
+      - ENABLE_REQUEST_SIGNING=true
+      # Rate Limiting
+      - RATE_LIMIT_MAX=10000
+      - RATE_LIMIT_WINDOW=1 minute
+      # Integration URLs
+      - AUDIT_SERVICE_URL=http://audit:3009
+      - CATALOG_SERVICE_URL=http://catalog:3006
+      - AUTH_BFF_URL=http://auth-bff:3002
+      - USER_SERVICE_URL=http://user-service:3003
+      - ANALYTICS_SERVICE_URL=http://analytics:3010
+      # Tool API configurations for context enrichment
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-mock_github_token}
+      - GITLAB_TOKEN=${GITLAB_TOKEN:-mock_gitlab_token}
+      - JENKINS_TOKEN=${JENKINS_TOKEN:-mock_jenkins_token}
+      - ARGOCD_TOKEN=${ARGOCD_TOKEN:-mock_argocd_token}
+      - TERRAFORM_TOKEN=${TERRAFORM_TOKEN:-mock_terraform_token}
+      - SONARQUBE_TOKEN=${SONARQUBE_TOKEN:-mock_sonarqube_token}
+      - GRAFANA_TOKEN=${GRAFANA_TOKEN:-mock_grafana_token}
+      - PROMETHEUS_TOKEN=${PROMETHEUS_TOKEN:-mock_prometheus_token}
+      - KIBANA_TOKEN=${KIBANA_TOKEN:-mock_kibana_token}
+      - SNYK_TOKEN=${SNYK_TOKEN:-mock_snyk_token}
+      - JIRA_TOKEN=${JIRA_TOKEN:-mock_jira_token}
+      # Tool Base URLs
+      - GITHUB_BASE_URL=https://github.com
+      - GITLAB_BASE_URL=https://gitlab.com
+      - JENKINS_BASE_URL=http://localhost:8080
+      - ARGOCD_BASE_URL=http://localhost:9090
+      - TERRAFORM_BASE_URL=https://app.terraform.io
+      - SONARQUBE_BASE_URL=http://localhost:9000
+      - GRAFANA_BASE_URL=http://localhost:3001
+      - PROMETHEUS_BASE_URL=http://localhost:9090
+      - KIBANA_BASE_URL=http://localhost:5601
+      - SNYK_BASE_URL=https://snyk.io
+      - JIRA_BASE_URL=https://your-domain.atlassian.net
+      # Development flags
+      - DEVELOPMENT_MODE=false
+      - ENABLE_POLICY_TESTING=true
+      - MOCK_EXTERNAL_SERVICES=false
+    ports:
+      - "3013:3013"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      audit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3013/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - sso-network
+
+  # # Infisical OSS for secrets management
+  # infisical:
+  #   image: infisical/infisical:latest
+  #   container_name: sso-infisical
+  #   environment:
+  #     DB_CONNECTION_URI: postgresql://${POSTGRES_USER:-sso_user}:${POSTGRES_PASSWORD:-sso_password}@postgres:5432/infisical
+  #     REDIS_URL: redis://redis:6379
+  #     ENCRYPTION_KEY: ${INFISICAL_ENCRYPTION_KEY:-your-encryption-key-here-32-chars}
+  #     AUTH_SECRET: ${INFISICAL_AUTH_SECRET:-your-auth-secret-here}
+  #   ports:
+  #     - "8082:8080"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  #   networks:
+  #     - sso-network
+
+  # Notifier Service - Phase 7.5
+  notifier:
+    build:
+      context: ./services/notifier
+      dockerfile: Dockerfile
+    container_name: sso-notifier
+    environment:
+      - NODE_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3014
+      - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
+      - REDIS_URL=redis://redis:6379
+      - REDIS_DB=1
+      - CORS_ORIGIN=http://localhost:3000
+      - LOG_LEVEL=info
+      # Notification processing configuration
+      - NOTIFICATION_PROCESSING_CONCURRENCY=5
+      - NOTIFICATION_RETRY_ATTEMPTS=3
+      - NOTIFICATION_RETRY_DELAY=5000
+      - NOTIFICATION_TIMEOUT=30000
+      # Template configuration
+      - TEMPLATE_CACHING_ENABLED=true
+      - TEMPLATE_CACHE_TTL=3600
+      # Email configuration (configure as needed)
+      - EMAIL_ENABLED=false
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_SECURE=true
+      - SMTP_USER=notifications@sso-hub.com
+      - "SMTP_PASS=${SMTP_PASS:-}"
+      - "EMAIL_FROM_ADDRESS=notifications@sso-hub.com"
+      - "EMAIL_FROM_NAME=SSO Hub Notifications"
+      # Slack configuration (configure as needed)
+      - SLACK_ENABLED=false
+      - "SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}"
+      - "SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}"
+      - "SLACK_DEFAULT_CHANNEL=#alerts"
+      - "SLACK_USERNAME=SSO Hub Bot"
+      - "SLACK_ICON_EMOJI=:warning:"
+      # Webhook configuration
+      - WEBHOOK_ENABLED=true
+      - WEBHOOK_TIMEOUT=30000
+      - WEBHOOK_RETRY_ATTEMPTS=3
+      # Service integration URLs
+      - AUDIT_SERVICE_URL=http://audit:3009
+      - USER_SERVICE_URL=http://user-service:3003
+      - POLICY_SERVICE_URL=http://policy:3013
+      # Security configuration
+      - "HMAC_SECRET=${HMAC_SECRET:-notifier-service-hmac-secret-key-change-in-production}"
+      - "ENCRYPTION_KEY=${ENCRYPTION_KEY:-notifier-32-char-encryption-key-default}"
+      # Queue configuration
+      - ESCALATION_ENABLED=true
+      - ESCALATION_DELAY=300000
+      - ESCALATION_MAX_LEVELS=3
+      # Archive configuration
+      - ARCHIVE_ENABLED=true
+      - ARCHIVE_AFTER_DAYS=30
+      - CLEANUP_ENABLED=true
+      - CLEANUP_AFTER_DAYS=90
+    ports:
+      - "3014:3014"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      audit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3014/healthz', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - sso-network
+  
+  # NGINX Reverse Proxy with OIDC
+  nginx:
+    build:
+      context: ./infra/nginx
+      dockerfile: Dockerfile
+    container_name: sso-nginx
+    environment:
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-sso-hub-client}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-sso-client-secret}
+      OIDC_DISCOVERY_URL: ${OIDC_DISCOVERY_URL:-http://keycloak:8080/realms/sso-hub/.well-known/openid_configuration}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3002/auth/callback}
+      OIDC_LOGOUT_PATH: ${OIDC_LOGOUT_PATH:-/auth/logout}
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid email profile}
+      IDENTITY_HEADER_SECRET: ${IDENTITY_HEADER_SECRET:-your-hmac-secret-here}
+      USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3003}
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      auth-bff:
+        condition: service_started
+      frontend:
+        condition: service_started
+      user-service:
+        condition: service_started
+      tools-service:
+        condition: service_started
+    volumes:
+      - ./infra/nginx/logs:/var/log/nginx
+    networks:
+      - sso-network
+
+volumes:
+  postgres_data:
+  keycloak_postgres_data:
+  redis_data:
+  analytics-exports:
+
+networks:
+  sso-network:
+    driver: bridge

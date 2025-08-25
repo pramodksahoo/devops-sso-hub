@@ -1,0 +1,184 @@
+# =================================
+# SSO Hub - Comprehensive .gitignore
+# =================================
+
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.nuxt/
+.vuepress/dist/
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+.env.test
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output/
+
+# Test reports and artifacts
+test-results/
+playwright-report/
+test-report/
+junit.xml
+coverage.xml
+*.spec.js.map
+*.test.js.map
+
+# Docker
+.docker/
+*.dockerignore.bak
+docker-compose.override.yml
+.env.docker
+
+# Database
+*.sqlite
+*.sqlite3
+*.db
+postgres-data/
+mysql-data/
+
+# Cache and temporary files
+.cache/
+.parcel-cache/
+.tmp/
+tmp/
+temp/
+.temp/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+.project
+.classpath
+.settings/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Secrets and keys
+*.key
+*.pem
+*.p12
+*.crt
+*.csr
+secrets/
+private/
+.secrets/
+
+# SSL certificates
+ssl/
+certs/
+*.cert
+
+# Backup files
+*.backup
+*.bak
+*.old
+*.orig
+*~
+.env.backup
+.env.bak
+
+# Development and build artifacts
+.eslintcache
+.stylelintcache
+.sass-cache/
+connect.lock
+typings/
+
+# Package manager files
+.pnpm-lock.yaml.backup
+yarn-error.log
+
+# Cloud and deployment
+.vercel/
+.netlify/
+.firebase/
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# Documentation build
+docs/.vuepress/dist/
+docs/build/
+
+# Development tools and configurations
+.husky/_/
+.commitlintrc.*
+.editorconfig
+
+# Setup and installation artifacts
+.setup_complete
+setup.log
+configure.log
+install.log
+
+# Development files that shouldn't be committed
+.claude/
+.mcp.json
+old/
+.github/
+.vscode/settings.json
+
+# Application specific
+postgresql-data/
+redis-data/
+keycloak-data/
+
+# Test screenshots and videos
+screenshots/
+videos/
+trace/
+test/
+
+# Playwright specific
+test-results/
+playwright/.cache/
+.playwright-mcp
+
