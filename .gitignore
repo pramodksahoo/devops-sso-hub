@@ -19,7 +19,6 @@ out/
 .vuepress/dist/
 
 # Environment files (keep .env.example)
-.env
 .env.local
 .env.*.local
 .env.production
