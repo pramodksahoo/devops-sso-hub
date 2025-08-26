@@ -72,13 +72,17 @@ services:
       KC_DB_USERNAME: ${KC_DB_USERNAME:-keycloak_user}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:-keycloak_password}
       
-      # Network configuration (v2 format)
+      # Network configuration (v2 format - Keycloak 2024)
       KC_HOSTNAME: ${EXTERNAL_HOST:-localhost}
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "false"
       KC_HTTP_ENABLED: "true"
-      KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-forwarded}
-      KC_PROXY: "edge"
+      KC_PROXY_HEADERS: "xforwarded"
+      
+      # Disable SSL requirement completely
+      KC_SPI_TRUSTSTORE_FILE_PASSWORD: "password"
+      KC_SPI_TRUSTSTORE_FILE_FILE: ""
       
       # Enable health and metrics
       KC_HEALTH_ENABLED: "true"
@@ -889,20 +893,27 @@ services:
     networks:
       - sso-network
   
-  # NGINX Reverse Proxy with OIDC
+  # NGINX Reverse Proxy with OIDC and SSL Support
   nginx:
     build:
       context: ./infra/nginx
       dockerfile: Dockerfile
     container_name: sso-nginx
     environment:
+      # OIDC Configuration
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-sso-hub-client}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-sso-client-secret}
       OIDC_DISCOVERY_URL: ${OIDC_DISCOVERY_URL:-http://keycloak:8080/realms/sso-hub/.well-known/openid_configuration}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3002/auth/callback}
       OIDC_LOGOUT_PATH: ${OIDC_LOGOUT_PATH:-/auth/logout}
-      OIDC_SCOPE: ${OIDC_SCOPE:-openid email profile}
+      OIDC_SCOPE: ${OIDC_SCOPE:-"openid email profile"}
       IDENTITY_HEADER_SECRET: ${IDENTITY_HEADER_SECRET:-your-hmac-secret-here}
+      
+      # External Access Configuration
+      EXTERNAL_HOST: ${EXTERNAL_HOST:-localhost}
+      EXTERNAL_PROTOCOL: ${EXTERNAL_PROTOCOL:-http}
+      
+      # Service URLs
       USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3003}
     ports:
       - "80:80"
@@ -920,6 +931,8 @@ services:
         condition: service_started
     volumes:
       - ./infra/nginx/logs:/var/log/nginx
+      - ./infra/nginx/ssl:/etc/nginx/ssl:ro
+      - ./infra/ssl-certs:/etc/ssl/certs/sso-hub:ro
     networks:
       - sso-network
 
