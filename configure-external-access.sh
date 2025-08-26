@@ -214,6 +214,8 @@ configure_http() {
     if [[ -n "$custom_port" ]]; then
         EXTERNAL_PORT=":$custom_port"
     fi
+    
+    print_info "HTTP configuration completed"
 }
 
 # Configure HTTPS with self-signed certificate
@@ -255,6 +257,8 @@ configure_https_selfsigned() {
     
     EXTERNAL_PROTOCOL="https"
     EXTERNAL_PORT=""
+    
+    print_info "HTTPS self-signed configuration completed"
 }
 
 # Configure HTTPS with Let's Encrypt
@@ -282,6 +286,7 @@ configure_https_letsencrypt() {
     EXTERNAL_PORT=""
     
     USE_LETSENCRYPT=true
+    print_info "Let's Encrypt configuration completed"
 }
 
 # Configure custom options
@@ -342,6 +347,8 @@ configure_custom() {
     else
         EXTERNAL_PORT=""
     fi
+    
+    print_info "Custom configuration completed"
 }
 
 # Update environment configuration
@@ -529,7 +536,7 @@ main() {
     # Get user's deployment choice
     local choice=$(get_deployment_choice)
     
-    # Initialize variables
+    # Initialize global variables
     EXTERNAL_HOST=""
     EXTERNAL_PROTOCOL=""
     EXTERNAL_PORT=""
@@ -537,6 +544,7 @@ main() {
     USE_SELFSIGNED=false
     
     # Configure based on choice
+    echo ""
     case $choice in
         1)
             configure_http
@@ -553,9 +561,16 @@ main() {
             ;;
     esac
     
+    # Debug: Show captured values
+    print_info "Captured configuration:"
+    print_info "  EXTERNAL_HOST: '$EXTERNAL_HOST'"
+    print_info "  EXTERNAL_PROTOCOL: '$EXTERNAL_PROTOCOL'"
+    print_info "  EXTERNAL_PORT: '$EXTERNAL_PORT'"
+    
     # Validate configuration
     if [[ -z "$EXTERNAL_HOST" || -z "$EXTERNAL_PROTOCOL" ]]; then
-        print_error "Configuration incomplete"
+        print_error "Configuration incomplete - missing required values"
+        print_error "HOST: '$EXTERNAL_HOST', PROTOCOL: '$EXTERNAL_PROTOCOL'"
         exit 1
     fi
     
