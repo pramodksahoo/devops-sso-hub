@@ -81,8 +81,9 @@ git clone https://github.com/pramodksahoo/devops-sso-hub.git
 cd devops-sso-hub
 cp env.example .env
 
-# 2. Configure external access (skip for localhost-only)
-./configure-external-access.sh
+# 2. Configure external access (optional - see External Access section below)
+# For IP/domain access: ./configure-external-access.sh
+# Or manually edit .env: EXTERNAL_HOST=your.ip.address
 
 # 3. Deploy all 14 microservices (~2 minutes)
 docker-compose up -d
@@ -103,20 +104,26 @@ After deployment completes (2-3 minutes):
 
 ### 🌍 **External Access Configuration**
 
-**For IP Address Access** (e.g., 192.168.1.100):
+**Option 1: Interactive Setup** (Recommended)
 ```bash
 ./configure-external-access.sh
-# Select option 2, enter your server's IP address
-# Access at: http://192.168.1.100:3000
+# Select deployment type: localhost/IP/domain/custom
+# Automatically detects your IP address
+# Updates all configuration files
 ```
 
-**For Domain Access** (e.g., sso-hub.company.com):
-```bash  
-./configure-external-access.sh
-# Select option 3, enter your domain name
-# Configure DNS A record: sso-hub.company.com → your-server-ip
-# Access at: https://sso-hub.company.com (with SSL)
+**Option 2: Manual Configuration**
+```bash
+# Edit .env file before running setup.sh:
+EXTERNAL_HOST=192.168.1.100    # or your.domain.com
+EXTERNAL_PROTOCOL=http         # or https
+EXTERNAL_PORT=                 # or :8080 for custom port
+
+# Then run setup
+./setup.sh
 ```
+
+📚 **[Complete External Access Guide →](EXTERNAL_ACCESS.md)** - Detailed configuration examples, DNS setup, HTTPS, cloud deployment, and troubleshooting.
 
 ### ✅ **Validate Your Deployment**
 ```bash

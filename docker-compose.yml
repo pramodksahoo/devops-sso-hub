@@ -327,7 +327,7 @@ services:
       - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
       - REDIS_URL=redis://redis:6379
       - AUTH_BFF_URL=http://auth-bff:3002
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - WEBHOOK_BASE_URL=http://localhost:3006
       - FEATURE_DEEP_LINKING=true
       - FEATURE_WEBHOOK_PROCESSING=true
@@ -380,7 +380,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3007
       - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - LOG_LEVEL=info
       - WEBHOOK_TIMEOUT=30000
       - MAX_PAYLOAD_SIZE=10mb
@@ -430,7 +430,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3009
       - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - LOG_LEVEL=info
       - AUDIT_RETENTION_DAYS=90
       - AUDIT_BATCH_SIZE=1000
@@ -471,7 +471,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3010
       - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - LOG_LEVEL=info
       - ANALYTICS_RETENTION_DAYS=365
       - BATCH_SIZE=10000
@@ -521,7 +521,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3011
       - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - LOG_LEVEL=info
       - IDENTITY_SIGNATURE_SECRET=${IDENTITY_HEADER_SECRET}
       # Provisioning configuration
@@ -596,7 +596,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3012
       - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - LOG_LEVEL=info
       - IDENTITY_SIGNATURE_SECRET=your-super-secret-signature-key-min-32-chars
       # LDAP configuration
@@ -691,7 +691,7 @@ services:
       - HOST=0.0.0.0
       - PORT=3015
       - REDIS_URL=redis://redis:6379
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - LOG_LEVEL=info
       - GRAFANA_URL=http://localhost:3020
       - GRAFANA_ADMIN_USER=admin
@@ -725,7 +725,7 @@ services:
       - PORT=3013
       - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
       - REDIS_URL=redis://redis:6379
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - LOG_LEVEL=info
       - IDENTITY_HEADER_SECRET=${IDENTITY_HEADER_SECRET:-your-hmac-secret-here}
       # Policy Engine Configuration
@@ -826,7 +826,7 @@ services:
       - DATABASE_URL=postgresql://sso_user:sso_secure_password_123@postgres:5432/sso_hub
       - REDIS_URL=redis://redis:6379
       - REDIS_DB=1
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=${FRONTEND_URL:-http://localhost:3000}
       - LOG_LEVEL=info
       # Notification processing configuration
       - NOTIFICATION_PROCESSING_CONCURRENCY=5
