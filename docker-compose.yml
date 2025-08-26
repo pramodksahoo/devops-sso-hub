@@ -73,13 +73,12 @@ services:
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:-keycloak_password}
       
       # Network configuration (v2 format)
-      KC_HOSTNAME: ${KC_HOSTNAME:-localhost}
+      KC_HOSTNAME: ${EXTERNAL_HOST:-localhost}
       KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HTTP_ENABLED: "true"
       KC_PROXY_HEADERS: ${KC_PROXY_HEADERS:-forwarded}
-      
-      # External access configuration
-      KC_HOSTNAME_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}${EXTERNAL_PORT}
+      KC_PROXY: "edge"
       
       # Enable health and metrics
       KC_HEALTH_ENABLED: "true"
@@ -136,7 +135,7 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       
       # Security Configuration
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      CORS_ORIGIN: ${FRONTEND_URL:-http://localhost:3000}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       IDENTITY_HEADER_SECRET: ${IDENTITY_HEADER_SECRET}
     ports:
@@ -212,21 +211,21 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-        VITE_AUTH_BFF_URL: http://localhost:${AUTH_BFF_PORT:-3002}
-        VITE_API_BASE_URL: http://localhost:${AUTH_BFF_PORT:-3002}/api
-        VITE_WS_URL: ws://localhost:${AUTH_BFF_PORT:-3002}
-        VITE_USER_SERVICE_URL: http://localhost:${USER_SERVICE_PORT:-3003}
-        VITE_TOOLS_SERVICE_URL: http://localhost:${TOOLS_SERVICE_PORT:-3004}
-        VITE_ADMIN_CONFIG_URL: http://localhost:${ADMIN_CONFIG_PORT:-3005}
-        VITE_CATALOG_URL: http://localhost:${CATALOG_PORT:-3006}
-        VITE_WEBHOOK_INGRESS_URL: http://localhost:${WEBHOOK_INGRESS_PORT:-3007}
-        VITE_AUDIT_URL: http://localhost:${AUDIT_PORT:-3009}
-        VITE_ANALYTICS_URL: http://localhost:${ANALYTICS_PORT:-3010}
-        VITE_PROVISIONING_URL: http://localhost:${PROVISIONING_PORT:-3011}
-        VITE_LDAP_SYNC_URL: http://localhost:${LDAP_SYNC_PORT:-3012}
-        VITE_POLICY_URL: http://localhost:${POLICY_PORT:-3013}
-        VITE_NOTIFIER_URL: http://localhost:${NOTIFIER_PORT:-3014}
-        VITE_KEYCLOAK_URL: http://localhost:8080
+        VITE_AUTH_BFF_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${AUTH_BFF_PORT:-3002}
+        VITE_API_BASE_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${AUTH_BFF_PORT:-3002}/api
+        VITE_WS_URL: ws://${EXTERNAL_HOST:-localhost}:${AUTH_BFF_PORT:-3002}
+        VITE_USER_SERVICE_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${USER_SERVICE_PORT:-3003}
+        VITE_TOOLS_SERVICE_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${TOOLS_SERVICE_PORT:-3004}
+        VITE_ADMIN_CONFIG_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${ADMIN_CONFIG_PORT:-3005}
+        VITE_CATALOG_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${CATALOG_PORT:-3006}
+        VITE_WEBHOOK_INGRESS_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${WEBHOOK_INGRESS_PORT:-3007}
+        VITE_AUDIT_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${AUDIT_PORT:-3009}
+        VITE_ANALYTICS_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${ANALYTICS_PORT:-3010}
+        VITE_PROVISIONING_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${PROVISIONING_PORT:-3011}
+        VITE_LDAP_SYNC_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${LDAP_SYNC_PORT:-3012}
+        VITE_POLICY_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${POLICY_PORT:-3013}
+        VITE_NOTIFIER_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:${NOTIFIER_PORT:-3014}
+        VITE_KEYCLOAK_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:8080
         VITE_GRAFANA_URL: ${GRAFANA_URL:-http://localhost:3100}
         VITE_PROMETHEUS_URL: ${PROMETHEUS_URL:-http://localhost:9090}
         VITE_APP_TITLE: SSO Hub

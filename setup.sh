@@ -151,6 +151,36 @@ check_requirements() {
     print_success "System requirements check completed"
 }
 
+# Update environment URLs based on external configuration
+update_environment_urls() {
+    if [ -f ".env" ]; then
+        # Read external configuration from .env
+        local external_host=$(grep "^EXTERNAL_HOST=" .env 2>/dev/null | cut -d= -f2 || echo "localhost")
+        local external_protocol=$(grep "^EXTERNAL_PROTOCOL=" .env 2>/dev/null | cut -d= -f2 || echo "http")
+        local external_port=$(grep "^EXTERNAL_PORT=" .env 2>/dev/null | cut -d= -f2 || echo "")
+        
+        # Only update if external host is not localhost
+        if [[ "$external_host" != "localhost" && "$external_host" != "" ]]; then
+            local full_frontend_url="${external_protocol}://${external_host}${external_port}"
+            local full_keycloak_url="${external_protocol}://${external_host}:8080"
+            local full_auth_bff_url="${external_protocol}://${external_host}:3002"
+            
+            print_info "Auto-updating URLs for external host: $external_host"
+            
+            # Update URLs in .env file
+            sed -i.backup \
+                -e "s|^FRONTEND_URL=.*|FRONTEND_URL=$full_frontend_url|" \
+                -e "s|^CORS_ORIGIN=.*|CORS_ORIGIN=$full_frontend_url|" \
+                -e "s|^KC_HOSTNAME=.*|KC_HOSTNAME=$external_host|" \
+                -e "s|^KEYCLOAK_PUBLIC_URL=.*|KEYCLOAK_PUBLIC_URL=$full_keycloak_url/realms/sso-hub|" \
+                -e "s|^OIDC_REDIRECT_URI=.*|OIDC_REDIRECT_URI=$full_auth_bff_url/auth/callback|" \
+                .env
+                
+            print_success "Updated environment URLs for external access"
+        fi
+    fi
+}
+
 # Configure environment
 configure_environment() {
     print_step "Configuring environment..."
@@ -202,6 +232,9 @@ configure_environment() {
         print_info "Run './configure-external-access.sh' later for external access"
     fi
     
+    # Auto-update URLs if external configuration is detected
+    update_environment_urls
+    
     # Generate secure secrets
     print_info "Generating secure secrets..."
     
@@ -236,11 +269,11 @@ start_services() {
     
     # Pull base images to speed up build
     print_info "Pulling base images..."
-    docker-compose pull --ignore-pull-failures &>>"$LOG_FILE" || true
+    docker-compose pull --ignore-pull-failures >> "$LOG_FILE" 2>&1 || true
     
     # Build all services
     print_info "Building services (this may take a few minutes)..."
-    if docker-compose build --parallel &>>"$LOG_FILE"; then
+    if docker-compose build --parallel >> "$LOG_FILE" 2>&1; then
         print_success "Services built successfully"
     else
         print_error "Failed to build services"
@@ -250,7 +283,7 @@ start_services() {
     
     # Start core infrastructure first
     print_info "Starting core infrastructure..."
-    docker-compose up -d postgres keycloak-postgres redis &>>"$LOG_FILE"
+    docker-compose up -d postgres keycloak-postgres redis >> "$LOG_FILE" 2>&1
     
     # Wait for databases to be ready
     print_info "Waiting for databases to initialize..."
@@ -279,7 +312,7 @@ start_services() {
     
     # Start Keycloak and wait for it to be ready
     print_info "Starting Keycloak..."
-    docker-compose up -d keycloak &>>"$LOG_FILE"
+    docker-compose up -d keycloak >> "$LOG_FILE" 2>&1
     
     # Wait for Keycloak
     print_info "Waiting for Keycloak to be ready (this can take 2-3 minutes)..."
@@ -301,7 +334,7 @@ start_services() {
     
     # Start remaining services
     print_info "Starting application services..."
-    docker-compose up -d &>>"$LOG_FILE"
+    docker-compose up -d >> "$LOG_FILE" 2>&1
     
     print_success "All services started"
 }
@@ -362,6 +395,8 @@ show_completion_info() {
     # Get the actual external host configuration
     local frontend_url="http://localhost:3000"
     local keycloak_url="http://localhost:8080"
+    local api_docs_url="http://localhost:3006/docs"
+    local health_monitoring_url="http://localhost:3004"
     
     if [ -f ".env" ]; then
         # Try to extract URLs from .env
@@ -372,14 +407,16 @@ show_completion_info() {
         if [[ "$external_host" != "localhost" ]]; then
             frontend_url="${external_protocol}://${external_host}${external_port}"
             keycloak_url="${external_protocol}://${external_host}:8080"
+            api_docs_url="${external_protocol}://${external_host}:3006/docs"
+            health_monitoring_url="${external_protocol}://${external_host}:3004"
         fi
     fi
     
     echo -e "${CYAN}🌐 Access URLs:${NC}"
     echo "  • 🎨 Main Dashboard:     $frontend_url"
     echo "  • 🔐 Keycloak Admin:     $keycloak_url"
-    echo "  • 📚 API Documentation: http://localhost:3006/docs"
-    echo "  • 📊 Health Monitoring:  http://localhost:3004"
+    echo "  • 📚 API Documentation: $api_docs_url"
+    echo "  • 📊 Health Monitoring:  $health_monitoring_url"
     echo ""
     
     echo -e "${CYAN}Default Login Credentials:${NC}"
