@@ -54,6 +54,20 @@ DEFAULT_ORG="SSO Hub"
 DEFAULT_UNIT="DevOps"
 VALIDITY_DAYS=365
 
+# Detect operating system for platform-specific adjustments
+detect_platform() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        PLATFORM="macos"
+        print_info "Platform: macOS"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        PLATFORM="linux"
+        print_info "Platform: Linux"
+    else
+        PLATFORM="unknown"
+        print_warning "Unknown platform: $OSTYPE"
+    fi
+}
+
 # Load configuration from .env if available
 load_config() {
     if [ -f ".env" ]; then
@@ -102,23 +116,38 @@ generate_cert_config() {
     
     local config_file="$CERTS_DIR/openssl.conf"
     
-    cat > "$config_file" << EOF
+    # Create a cross-platform compatible OpenSSL config
+    cat > "$config_file" << 'EOF'
 [req]
 default_bits = 2048
 prompt = no
 default_md = sha256
 req_extensions = req_ext
 distinguished_name = dn
+x509_extensions = v3_req
 
 [dn]
-C=${DEFAULT_COUNTRY}
-ST=${DEFAULT_STATE}
-L=${DEFAULT_CITY}
-O=${DEFAULT_ORG}
-OU=${DEFAULT_UNIT}
-CN=${EXTERNAL_HOST}
+C=US
+ST=California
+L=San Francisco
+O=SSO Hub
+OU=DevOps
+EOF
+
+    # Add the CN (Common Name) with the external host
+    echo "CN=${EXTERNAL_HOST}" >> "$config_file"
+
+    # Add extensions sections
+    cat >> "$config_file" << 'EOF'
 
 [req_ext]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+subjectAltName = @alt_names
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 subjectAltName = @alt_names
 
 [alt_names]
@@ -126,17 +155,22 @@ EOF
 
     # Add appropriate SAN entries based on host type
     if [[ "$HOST_TYPE" == "ip" ]]; then
-        echo "IP.1 = ${EXTERNAL_HOST}" >> "$config_file"
-        echo "DNS.1 = localhost" >> "$config_file"
-        echo "IP.2 = 127.0.0.1" >> "$config_file"
+        cat >> "$config_file" << EOF
+IP.1 = ${EXTERNAL_HOST}
+DNS.1 = localhost
+IP.2 = 127.0.0.1
+EOF
     else
-        echo "DNS.1 = ${EXTERNAL_HOST}" >> "$config_file"
-        echo "DNS.2 = localhost" >> "$config_file"
-        echo "DNS.3 = *.${EXTERNAL_HOST}" >> "$config_file"
-        echo "IP.1 = 127.0.0.1" >> "$config_file"
+        cat >> "$config_file" << EOF
+DNS.1 = ${EXTERNAL_HOST}
+DNS.2 = localhost
+DNS.3 = *.${EXTERNAL_HOST}
+IP.1 = 127.0.0.1
+EOF
     fi
     
     print_success "Certificate configuration created"
+    print_info "Config file: $config_file"
 }
 
 # Generate self-signed certificate
@@ -147,21 +181,67 @@ generate_certificate() {
     local cert_file="$CERTS_DIR/server.crt"
     local config_file="$CERTS_DIR/openssl.conf"
     
-    # Generate private key
-    if openssl genpkey -algorithm RSA -out "$key_file" -pkcs8 -pass pass: 2>/dev/null; then
-        print_success "Private key generated"
+    # Generate private key - Use the most compatible method
+    print_info "Generating RSA private key..."
+    
+    # Remove any existing key file first
+    rm -f "$key_file"
+    
+    # Use genrsa which works consistently across all OpenSSL versions and platforms
+    if openssl genrsa -out "$key_file" 2048 2>"$CERTS_DIR/openssl_error.log"; then
+        print_success "Private key generated successfully"
         chmod 600 "$key_file"
+        
+        # Verify the key was created and is valid
+        if [[ -f "$key_file" ]] && openssl rsa -in "$key_file" -check -noout 2>/dev/null; then
+            print_success "Private key validated"
+        else
+            print_error "Private key validation failed"
+            return 1
+        fi
     else
         print_error "Failed to generate private key"
+        print_error "OpenSSL error details:"
+        if [[ -f "$CERTS_DIR/openssl_error.log" ]]; then
+            cat "$CERTS_DIR/openssl_error.log"
+        fi
+        print_info "Troubleshooting:"
+        print_info "- Check OpenSSL installation: $(openssl version)"
+        print_info "- Check directory permissions: $CERTS_DIR"
+        print_info "- Check disk space: $(df -h . | tail -1)"
         return 1
     fi
     
     # Generate certificate
-    if openssl req -new -x509 -key "$key_file" -out "$cert_file" -days $VALIDITY_DAYS -config "$config_file" 2>/dev/null; then
-        print_success "Certificate generated"
+    print_info "Generating X.509 certificate..."
+    
+    # Remove any existing certificate file first
+    rm -f "$cert_file"
+    
+    # Generate the certificate with cross-platform compatible options
+    if openssl req -new -x509 -key "$key_file" -out "$cert_file" -days $VALIDITY_DAYS -config "$config_file" -extensions req_ext 2>"$CERTS_DIR/cert_error.log"; then
+        print_success "Certificate generated successfully"
         chmod 644 "$cert_file"
+        
+        # Verify the certificate was created and is valid
+        if [[ -f "$cert_file" ]] && openssl x509 -in "$cert_file" -noout -text >/dev/null 2>&1; then
+            print_success "Certificate validated"
+        else
+            print_error "Certificate validation failed"
+            return 1
+        fi
     else
         print_error "Failed to generate certificate"
+        print_error "Certificate generation error details:"
+        if [[ -f "$CERTS_DIR/cert_error.log" ]]; then
+            cat "$CERTS_DIR/cert_error.log"
+        fi
+        print_error "OpenSSL configuration file contents:"
+        cat "$config_file"
+        print_info "Troubleshooting:"
+        print_info "- OpenSSL version: $(openssl version)"
+        print_info "- Config file path: $config_file"
+        print_info "- Certificate output: $cert_file"
         return 1
     fi
     
@@ -174,15 +254,45 @@ generate_certificate() {
 
 # Generate DH parameters for enhanced security
 generate_dh_params() {
-    print_step "Generating DH parameters (this may take a moment)..."
+    print_step "Generating DH parameters (this may take 30-60 seconds)..."
     
     local dh_file="$CERTS_DIR/dhparam.pem"
     
-    if openssl dhparam -out "$dh_file" 2048 2>/dev/null; then
-        print_success "DH parameters generated"
-        cp "$dh_file" "$NGINX_CERTS_DIR/"
+    # Remove any existing DH file
+    rm -f "$dh_file"
+    
+    # Generate DH parameters with progress indication
+    print_info "This process may take some time on slower systems..."
+    
+    # Use timeout if available, otherwise run without timeout
+    local timeout_cmd=""
+    if command -v timeout &> /dev/null; then
+        timeout_cmd="timeout 300"
+    elif command -v gtimeout &> /dev/null; then
+        # macOS with coreutils installed via brew
+        timeout_cmd="gtimeout 300"
+    fi
+    
+    if $timeout_cmd openssl dhparam -out "$dh_file" 2048 2>"$CERTS_DIR/dh_error.log"; then
+        print_success "DH parameters generated successfully"
+        chmod 644 "$dh_file"
+        cp "$dh_file" "$NGINX_CERTS_DIR/" || print_warning "Failed to copy DH params to nginx directory"
     else
-        print_warning "Failed to generate DH parameters, using default"
+        print_warning "DH parameter generation failed or timed out"
+        if [[ -f "$CERTS_DIR/dh_error.log" ]]; then
+            print_info "DH generation error details:"
+            cat "$CERTS_DIR/dh_error.log"
+        fi
+        print_info "SSL will work without DH parameters, but with reduced security"
+        
+        # Create a simple DH params file as fallback
+        print_info "Creating minimal DH parameters..."
+        if openssl dhparam -out "$dh_file" 1024 2>/dev/null; then
+            print_success "Minimal DH parameters created"
+            cp "$dh_file" "$NGINX_CERTS_DIR/" || print_warning "Failed to copy DH params"
+        else
+            print_warning "Could not generate any DH parameters"
+        fi
     fi
 }
 
@@ -260,11 +370,22 @@ EOF
 main() {
     print_header
     
+    # Detect platform
+    detect_platform
+    
     # Check if openssl is available
     if ! command -v openssl &> /dev/null; then
         print_error "OpenSSL is not installed. Please install OpenSSL and try again."
+        if [[ "$PLATFORM" == "macos" ]]; then
+            print_info "On macOS, install with: brew install openssl"
+        elif [[ "$PLATFORM" == "linux" ]]; then
+            print_info "On Ubuntu/Debian: sudo apt-get install openssl"
+            print_info "On RHEL/CentOS: sudo yum install openssl"
+        fi
         exit 1
     fi
+    
+    print_info "OpenSSL version: $(openssl version)"
     
     # Load configuration
     load_config
