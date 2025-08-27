@@ -849,6 +849,14 @@ main() {
         exit 1
     fi
     
+    # Validate environment file syntax
+    print_step "Validating environment file syntax..."
+    if bash -n .env 2>/dev/null && bash -n apps/frontend/.env 2>/dev/null; then
+        print_success "Environment file syntax validation passed"
+    else
+        print_warning "Environment file syntax issues detected, but continuing..."
+    fi
+    
     # Setup SSL certificates if needed
     if ! setup_ssl_certificates; then
         print_error "Failed to setup SSL certificates"

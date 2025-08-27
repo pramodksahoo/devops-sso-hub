@@ -51,14 +51,21 @@ CERTBOT_LOGS_DIR="$LETSENCRYPT_DIR/logs"
 # Load configuration
 load_config() {
     if [ -f ".env" ]; then
-        set -a
-        source .env
-        set +a
+        print_info "Loading configuration from .env..."
         
+        # Safely extract specific variables we need instead of sourcing entire file
+        EXTERNAL_HOST=$(grep "^EXTERNAL_HOST=" .env 2>/dev/null | cut -d= -f2 | sed 's/^["'"'"']//' | sed 's/["'"'"']$//' || echo "localhost")
+        EXTERNAL_PROTOCOL=$(grep "^EXTERNAL_PROTOCOL=" .env 2>/dev/null | cut -d= -f2 | sed 's/^["'"'"']//' | sed 's/["'"'"']$//' || echo "http")
+        
+        # Remove any whitespace
+        EXTERNAL_HOST=$(echo "$EXTERNAL_HOST" | xargs)
+        EXTERNAL_PROTOCOL=$(echo "$EXTERNAL_PROTOCOL" | xargs)
+        
+        # Set defaults if empty
         EXTERNAL_HOST=${EXTERNAL_HOST:-localhost}
         EXTERNAL_PROTOCOL=${EXTERNAL_PROTOCOL:-http}
         
-        print_info "Configuration loaded:"
+        print_success "Configuration loaded:"
         print_info "  External Host: $EXTERNAL_HOST"
         print_info "  Protocol: $EXTERNAL_PROTOCOL"
     else

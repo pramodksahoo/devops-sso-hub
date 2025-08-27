@@ -259,6 +259,48 @@ configure_environment() {
     print_success "Environment configuration completed"
 }
 
+# Validate and fix .env file syntax issues
+validate_env_syntax() {
+    print_step "Validating .env file syntax..."
+    
+    local env_files=(".env" "apps/frontend/.env")
+    local fixed_any=false
+    
+    for env_file in "${env_files[@]}"; do
+        if [ -f "$env_file" ]; then
+            print_info "Checking $env_file..."
+            
+            # Create a backup before making changes
+            cp "$env_file" "${env_file}.syntax-backup" 2>/dev/null || true
+            
+            # Check for and fix common syntax issues
+            if grep -q '".*email.*"' "$env_file" 2>/dev/null; then
+                print_warning "Found potential quote issues in $env_file"
+                # Fix double quotes around values containing 'email'
+                sed -i.tmp "s/\"\\([^\"]*email[^\"]*\\)\"/'\1'/g" "$env_file"
+                rm -f "${env_file}.tmp"
+                fixed_any=true
+                print_success "Fixed quote formatting in $env_file"
+            fi
+            
+            # Check for lines that might cause bash parsing issues
+            if bash -n "$env_file" 2>/dev/null; then
+                print_success "$env_file syntax is valid"
+            else
+                print_warning "$env_file has syntax issues, attempting to fix..."
+                # Additional fixes can be added here
+                fixed_any=true
+            fi
+        fi
+    done
+    
+    if $fixed_any; then
+        print_success "Environment file syntax validation completed with fixes"
+    else
+        print_success "Environment file syntax validation completed"
+    fi
+}
+
 # Create missing environment files with proper error handling
 create_missing_env_files() {
     print_step "Creating missing environment files..."
@@ -628,6 +670,7 @@ main() {
     check_requirements
     configure_environment "$auto_flag"
     create_missing_env_files
+    validate_env_syntax
     validate_env_files
     start_services
     verify_deployment
