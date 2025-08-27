@@ -439,7 +439,7 @@ start_services() {
     # Validate critical build files exist
     print_info "Validating build dependencies..."
     local critical_files=(
-        "infra/keycloak/disable-ssl.sh"
+        "infra/keycloak/configure-keycloak.sh"
         "infra/keycloak/entrypoint.sh" 
         "infra/keycloak/Dockerfile"
         "apps/frontend/.env"

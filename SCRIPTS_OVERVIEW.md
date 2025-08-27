@@ -31,11 +31,8 @@ This document explains all the scripts available in SSO Hub and their purposes.
 
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `entrypoint.sh` | **Keycloak enhanced startup** - Automatically disables SSL | Used by Docker (automatic) |
-| `disable-ssl.sh` | **Realm SSL disabling** - Fixes "HTTPS required" errors | Called by entrypoint (automatic) |
-| `create-admin-user.sh` | **Admin user creation** - Creates Keycloak admin | Used by Docker (automatic) |
-| `setup-realm.sh` | **Realm configuration** - Sets up SSO Hub realm | Used by Docker (automatic) |
-| `update-theme.sh` | **Theme updates** - Updates SSO Hub branding | Manual theme updates |
+| `entrypoint.sh` | **Keycloak enhanced startup** - Container initialization | Used by Docker (automatic) |
+| `configure-keycloak.sh` | **Complete Keycloak configuration** - SSL disabling, realm setup, external access | Called by entrypoint (automatic) |
 
 ### **NGINX Scripts (`infra/nginx/`)**
 
