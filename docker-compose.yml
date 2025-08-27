@@ -62,9 +62,9 @@ services:
       dockerfile: Dockerfile
     container_name: sso-keycloak
     environment:
-      # Bootstrap admin credentials (required for container)
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_password}
+      # Admin credentials (Keycloak 24.0 format)
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_secure_password_123}
       
       # Database configuration
       KC_DB: postgres
@@ -74,10 +74,12 @@ services:
       
       # Network configuration (v2 format - Keycloak 2024)
       KC_HOSTNAME: ${EXTERNAL_HOST:-localhost}
+      KC_HOSTNAME_PORT: "8080"
       KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
-      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false" 
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8080"
       KC_PROXY_HEADERS: "xforwarded"
       
       # Disable SSL requirement completely
@@ -102,7 +104,7 @@ services:
       keycloak-postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000; echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost:9000\\r\\nConnection: close\\r\\n\\r\\n' >&3; cat <&3 | grep -q '\"status\": \"UP\"' && exit 0 || exit 1"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080; echo -e 'GET /realms/master HTTP/1.1\\r\\nHost: localhost:8080\\r\\nConnection: close\\r\\n\\r\\n' >&3; cat <&3 | grep -q 'realm' && exit 0 || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 10
@@ -177,7 +179,7 @@ services:
       # Keycloak Configuration
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-sso-hub}
-      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_secure_password_123}
       
       # Infisical Configuration

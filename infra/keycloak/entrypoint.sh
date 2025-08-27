@@ -30,8 +30,8 @@ run_keycloak_configuration() {
     
     # Run configuration script in background
     (
-        # Wait for Keycloak to be fully ready
-        sleep 45
+        # Wait for Keycloak to be fully ready and initialized
+        sleep 60
         
         print_info "Running complete Keycloak configuration..."
         # Run the consolidated configuration script
