@@ -24,24 +24,22 @@ print_error() {
     echo -e "${RED}[KEYCLOAK-ENTRYPOINT]${NC} $1"
 }
 
-# Function to run SSL disabling script in background
-run_ssl_disabling() {
-    print_info "Starting SSL disabling script in background..."
+# Function to run Keycloak configuration in background
+run_keycloak_configuration() {
+    print_info "Starting Keycloak configuration in background..."
     
-    # Run the SSL disabling script in background
+    # Run configuration script in background
     (
-        # Wait a bit longer to ensure Keycloak is fully ready
-        sleep 30
+        # Wait for Keycloak to be fully ready
+        sleep 45
         
-        # Set environment variables for the script
-        export KC_INTERNAL_URL="http://localhost:8080"
-        export KEYCLOAK_REALM="sso-hub"
+        print_info "Running complete Keycloak configuration..."
+        # Run the consolidated configuration script
+        /opt/keycloak/bin/configure-keycloak.sh
         
-        # Run the script
-        /opt/keycloak/bin/disable-ssl.sh
     ) &
     
-    print_success "SSL disabling script started in background"
+    print_success "Keycloak configuration started in background"
 }
 
 # Function to handle shutdown
@@ -61,12 +59,12 @@ print_info "External Host: ${KC_HOSTNAME:-localhost}"
 print_info "HTTP Enabled: ${KC_HTTP_ENABLED:-true}"
 print_info "HTTPS Strict: ${KC_HOSTNAME_STRICT_HTTPS:-false}"
 
-# Check if we should disable SSL (only for HTTP deployments)
+# Check if we should run configuration (only for HTTP deployments)
 if [[ "${KC_HTTP_ENABLED:-true}" == "true" && "${KC_HOSTNAME_STRICT_HTTPS:-false}" == "false" ]]; then
-    print_info "HTTP mode detected - SSL disabling will be enabled"
-    run_ssl_disabling
+    print_info "HTTP mode detected - Keycloak configuration will be enabled"
+    run_keycloak_configuration
 else
-    print_info "HTTPS mode detected - SSL disabling skipped"
+    print_info "HTTPS mode detected - Keycloak configuration skipped"
 fi
 
 # Get the original Keycloak command

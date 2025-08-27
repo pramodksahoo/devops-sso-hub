@@ -15,11 +15,11 @@ COPY themes/sso-hub-theme /opt/keycloak/themes/sso-hub-theme
 COPY import/ /opt/keycloak/data/import/
 
 # Copy scripts with explicit permissions
-COPY disable-ssl.sh /opt/keycloak/bin/disable-ssl.sh
+COPY configure-keycloak.sh /opt/keycloak/bin/configure-keycloak.sh
 COPY entrypoint.sh /opt/keycloak/bin/entrypoint.sh
 
 # Set permissions and ownership in one layer
-RUN chmod +x /opt/keycloak/bin/disable-ssl.sh \
+RUN chmod +x /opt/keycloak/bin/configure-keycloak.sh \
     && chmod +x /opt/keycloak/bin/entrypoint.sh \
     && chown -R keycloak:keycloak /opt/keycloak
 
