@@ -434,19 +434,48 @@ start_services() {
     
     # Clean up any existing containers
     print_info "Cleaning up any existing containers..."
-    docker-compose down --volumes --remove-orphans &>/dev/null || true
+    docker-compose down --volumes --remove-orphans >> "$LOG_FILE" 2>&1 || true
+    
+    # Validate critical build files exist
+    print_info "Validating build dependencies..."
+    local critical_files=(
+        "infra/keycloak/disable-ssl.sh"
+        "infra/keycloak/entrypoint.sh" 
+        "infra/keycloak/Dockerfile"
+        "apps/frontend/.env"
+    )
+    
+    for file in "${critical_files[@]}"; do
+        if [ ! -f "$file" ]; then
+            print_error "Critical build file missing: $file"
+            exit 1
+        else
+            print_success "✓ $file exists"
+        fi
+    done
     
     # Pull base images to speed up build
     print_info "Pulling base images..."
     docker-compose pull --ignore-pull-failures >> "$LOG_FILE" 2>&1 || true
     
-    # Build all services
+    # Build services with better error handling
     print_info "Building services (this may take a few minutes)..."
+    print_info "Progress will be logged to: $LOG_FILE"
+    
     if docker-compose build --parallel >> "$LOG_FILE" 2>&1; then
-        print_success "Services built successfully"
+        print_success "All services built successfully"
     else
         print_error "Failed to build services"
-        print_info "Check $LOG_FILE for details"
+        print_error "Last 20 lines of build log:"
+        echo ""
+        tail -20 "$LOG_FILE" | sed 's/^/  /'
+        echo ""
+        print_info "Full log: $LOG_FILE"
+        print_info "Common fixes:"
+        print_info "  1. Check Docker daemon is running"
+        print_info "  2. Ensure sufficient disk space"
+        print_info "  3. Verify all required files exist"
+        print_info "  4. Try: docker system prune -f"
         exit 1
     fi
     
