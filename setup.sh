@@ -259,6 +259,133 @@ configure_environment() {
     print_success "Environment configuration completed"
 }
 
+# Create missing environment files with proper error handling
+create_missing_env_files() {
+    print_step "Creating missing environment files..."
+    
+    # Create root .env if missing
+    if [ ! -f ".env" ]; then
+        if [ -f "env.example" ]; then
+            print_info "Creating root .env from env.example..."
+            cp env.example .env
+            print_success "Root .env file created"
+            
+            # Update with basic external configuration if not set
+            if ! grep -q "^EXTERNAL_HOST=" .env || grep -q "^EXTERNAL_HOST=localhost" .env; then
+                print_info "Setting basic external configuration..."
+                # Try to detect external IP
+                local detected_ip=$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "")
+                if [[ -n "$detected_ip" ]]; then
+                    sed -i.tmp "s/^EXTERNAL_HOST=.*/EXTERNAL_HOST=$detected_ip/" .env
+                    sed -i.tmp "s/^EXTERNAL_PROTOCOL=.*/EXTERNAL_PROTOCOL=http/" .env
+                    rm -f .env.tmp
+                    print_success "Basic external configuration set to: $detected_ip"
+                fi
+            fi
+        else
+            print_error "env.example file not found - cannot create .env"
+            return 1
+        fi
+    fi
+    
+    # Create frontend .env if missing
+    if [ ! -f "apps/frontend/.env" ]; then
+        if [ -f "apps/frontend/.env.example" ]; then
+            print_info "Creating frontend .env from .env.example..."
+            cp apps/frontend/.env.example apps/frontend/.env
+            print_success "Frontend .env file created"
+            
+            # Update frontend .env with external URLs if root .env has them
+            if [ -f ".env" ]; then
+                local external_host=$(grep "^EXTERNAL_HOST=" .env 2>/dev/null | cut -d= -f2 || echo "")
+                local external_protocol=$(grep "^EXTERNAL_PROTOCOL=" .env 2>/dev/null | cut -d= -f2 || echo "http")
+                
+                if [[ -n "$external_host" && "$external_host" != "localhost" ]]; then
+                    print_info "Updating frontend .env with external URLs..."
+                    
+                    # Update key frontend URLs
+                    sed -i.tmp "s|^VITE_FRONTEND_URL=.*|VITE_FRONTEND_URL=${external_protocol}://${external_host}|" apps/frontend/.env
+                    sed -i.tmp "s|^VITE_AUTH_BFF_URL=.*|VITE_AUTH_BFF_URL=${external_protocol}://${external_host}:3002|" apps/frontend/.env
+                    sed -i.tmp "s|^VITE_API_BASE_URL=.*|VITE_API_BASE_URL=${external_protocol}://${external_host}:3002/api|" apps/frontend/.env
+                    sed -i.tmp "s|^VITE_KEYCLOAK_URL=.*|VITE_KEYCLOAK_URL=${external_protocol}://${external_host}:8080|" apps/frontend/.env
+                    
+                    rm -f apps/frontend/.env.tmp
+                    print_success "Frontend .env updated with external URLs"
+                fi
+            fi
+        else
+            print_error "apps/frontend/.env.example not found - cannot create frontend .env"
+            return 1
+        fi
+    fi
+    
+    print_success "Environment file creation completed"
+}
+
+# Validate environment files before build
+validate_env_files() {
+    print_step "Validating environment files before build..."
+    
+    local validation_errors=0
+    
+    # Check root .env file exists
+    if [ ! -f ".env" ]; then
+        print_error "Root .env file is missing after creation attempt"
+        validation_errors=$((validation_errors + 1))
+    else
+        print_success "Root .env file exists"
+    fi
+    
+    # Check frontend .env file exists
+    if [ ! -f "apps/frontend/.env" ]; then
+        print_error "Frontend .env file is missing after creation attempt"
+        validation_errors=$((validation_errors + 1))
+    else
+        print_success "Frontend .env file exists"
+        
+        # Quick check that frontend .env has some required variables
+        if ! grep -q "^VITE_FRONTEND_URL=" apps/frontend/.env; then
+            print_error "Frontend .env is missing required VITE_FRONTEND_URL"
+            validation_errors=$((validation_errors + 1))
+        fi
+    fi
+    
+    # Show configuration status
+    if [ -f ".env" ]; then
+        local external_host=$(grep "^EXTERNAL_HOST=" .env 2>/dev/null | cut -d= -f2 || echo "")
+        local external_protocol=$(grep "^EXTERNAL_PROTOCOL=" .env 2>/dev/null | cut -d= -f2 || echo "http")
+        
+        print_info "Current configuration:"
+        print_info "  • External Host: ${external_host:-not set}"
+        print_info "  • Protocol: $external_protocol"
+        
+        if [[ -n "$external_host" && "$external_host" != "localhost" ]]; then
+            print_success "External access configured for: $external_host"
+        else
+            print_warning "Using localhost configuration"
+            print_info "For external access, run: ./configure-external-access.sh"
+        fi
+        
+        # Check SSL certificates if HTTPS
+        if [[ "$external_protocol" == "https" ]]; then
+            if [[ -f "infra/nginx/ssl/server.crt" && -f "infra/nginx/ssl/server.key" ]]; then
+                print_success "SSL certificates found for HTTPS"
+            else
+                print_warning "HTTPS configured but SSL certificates missing"
+                print_info "Certificates will be auto-generated during build if needed"
+            fi
+        fi
+    fi
+    
+    if [ $validation_errors -gt 0 ]; then
+        print_error "Environment file validation failed"
+        print_info "Please fix the issues above and run the setup again"
+        exit 1
+    fi
+    
+    print_success "Environment file validation passed"
+}
+
 # Build and start services
 start_services() {
     print_step "Building and starting SSO Hub services..."
@@ -500,6 +627,8 @@ main() {
     check_root
     check_requirements
     configure_environment "$auto_flag"
+    create_missing_env_files
+    validate_env_files
     start_services
     verify_deployment
     show_completion_info

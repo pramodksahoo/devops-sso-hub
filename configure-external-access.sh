@@ -487,6 +487,73 @@ configure_custom() {
     return 0
 }
 
+# Update frontend environment configuration
+update_frontend_env_config() {
+    print_step "Updating frontend environment configuration..."
+    
+    local frontend_env_file="apps/frontend/.env"
+    
+    # Check if frontend .env exists
+    if [ ! -f "$frontend_env_file" ]; then
+        if [ -f "apps/frontend/.env.example" ]; then
+            cp "apps/frontend/.env.example" "$frontend_env_file"
+            print_success "Created frontend .env from .env.example"
+        else
+            print_error "Frontend .env.example file not found"
+            return 1
+        fi
+    fi
+    
+    # Create backup of frontend .env
+    cp "$frontend_env_file" "${frontend_env_file}.$BACKUP_SUFFIX"
+    print_info "Frontend .env backup created: ${frontend_env_file}.$BACKUP_SUFFIX"
+    
+    # Calculate URLs for frontend
+    local FULL_FRONTEND_URL="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}"
+    local FULL_KEYCLOAK_URL="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080"
+    local FULL_AUTH_BFF_URL="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3002"
+    local FULL_API_BASE_URL="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3002/api"
+    
+    # Determine WebSocket protocol
+    local WS_PROTOCOL="ws"
+    if [[ "$EXTERNAL_PROTOCOL" == "https" ]]; then
+        WS_PROTOCOL="wss"
+    fi
+    local FULL_WS_URL="${WS_PROTOCOL}://${EXTERNAL_HOST}:3002"
+    
+    print_info "Updating frontend VITE_* variables..."
+    
+    # Update frontend .env file with external URLs
+    sed -i.tmp \
+        -e "s|^VITE_FRONTEND_URL=.*|VITE_FRONTEND_URL=$FULL_FRONTEND_URL|" \
+        -e "s|^VITE_AUTH_BFF_URL=.*|VITE_AUTH_BFF_URL=$FULL_AUTH_BFF_URL|" \
+        -e "s|^VITE_API_BASE_URL=.*|VITE_API_BASE_URL=$FULL_API_BASE_URL|" \
+        -e "s|^VITE_WS_URL=.*|VITE_WS_URL=$FULL_WS_URL|" \
+        -e "s|^VITE_KEYCLOAK_URL=.*|VITE_KEYCLOAK_URL=$FULL_KEYCLOAK_URL|" \
+        -e "s|^VITE_USER_SERVICE_URL=.*|VITE_USER_SERVICE_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3003|" \
+        -e "s|^VITE_TOOLS_SERVICE_URL=.*|VITE_TOOLS_SERVICE_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3004|" \
+        -e "s|^VITE_ADMIN_CONFIG_URL=.*|VITE_ADMIN_CONFIG_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3005|" \
+        -e "s|^VITE_CATALOG_URL=.*|VITE_CATALOG_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3006|" \
+        -e "s|^VITE_WEBHOOK_INGRESS_URL=.*|VITE_WEBHOOK_INGRESS_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3007|" \
+        -e "s|^VITE_AUDIT_URL=.*|VITE_AUDIT_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3009|" \
+        -e "s|^VITE_ANALYTICS_URL=.*|VITE_ANALYTICS_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3010|" \
+        -e "s|^VITE_PROVISIONING_URL=.*|VITE_PROVISIONING_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3011|" \
+        -e "s|^VITE_LDAP_SYNC_URL=.*|VITE_LDAP_SYNC_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3012|" \
+        -e "s|^VITE_POLICY_URL=.*|VITE_POLICY_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3013|" \
+        -e "s|^VITE_NOTIFIER_URL=.*|VITE_NOTIFIER_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3014|" \
+        -e "s|^VITE_GRAFANA_URL=.*|VITE_GRAFANA_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3100|" \
+        -e "s|^VITE_PROMETHEUS_URL=.*|VITE_PROMETHEUS_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:9090|" \
+        "$frontend_env_file"
+    
+    rm "${frontend_env_file}.tmp"
+    
+    print_success "Frontend environment configuration updated"
+    print_info "Frontend will be built with:"
+    print_info "  • VITE_FRONTEND_URL: $FULL_FRONTEND_URL"
+    print_info "  • VITE_AUTH_BFF_URL: $FULL_AUTH_BFF_URL"
+    print_info "  • VITE_KEYCLOAK_URL: $FULL_KEYCLOAK_URL"
+}
+
 # Update environment configuration
 update_env_config() {
     print_step "Updating environment configuration..."
@@ -770,9 +837,15 @@ main() {
     echo ""
     print_step "Applying configuration..."
     
-    # Update environment
+    # Update environment configurations
     if ! update_env_config; then
         print_error "Failed to update environment configuration"
+        exit 1
+    fi
+    
+    # Update frontend environment configuration
+    if ! update_frontend_env_config; then
+        print_error "Failed to update frontend environment configuration"
         exit 1
     fi
     
