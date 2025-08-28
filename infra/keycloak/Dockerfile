@@ -3,10 +3,12 @@ FROM quay.io/keycloak/keycloak:24.0
 # Switch to root user for file operations
 USER root
 
-# Install required tools for configuration scripts
-RUN microdnf update -y && \
-    microdnf install -y curl netcat-openbsd procps && \
-    microdnf clean all
+# The Keycloak base image is minimal - no external package managers or curl
+# We'll rely entirely on Keycloak's built-in Java tools (kcadm.sh)
+RUN echo "=== Keycloak configuration setup ===" && \
+    echo "Using Keycloak's built-in tools for configuration" && \
+    echo "No external dependencies needed" && \
+    echo "Configuration will use kcadm.sh for all operations"
 
 # Create directories and ensure they exist
 RUN mkdir -p /opt/keycloak/bin \

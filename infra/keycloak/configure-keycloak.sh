@@ -100,50 +100,47 @@ show_current_config() {
     print_info "  CLIENT_ID: ${CLIENT_ID}"
 }
 
-# Find working Keycloak URL (internal container connectivity)
+# Find working Keycloak URL (simplified for minimal container)
 find_keycloak_url() {
     print_info "Waiting for Keycloak to be ready for API calls..."
     
-    local max_attempts=40
+    local max_attempts=30
     local attempt=1
     
     while [ $attempt -le $max_attempts ]; do
         print_info "Attempt ${attempt}/${max_attempts} - checking Keycloak readiness..."
         
         for url in "${KC_INTERNAL_URLS[@]}"; do
-            print_info "  Testing: $url"
+            print_info "  Testing: $url/realms/master"
             
-            # First check if the port is listening
-            if nc -z localhost 8080 2>/dev/null; then
-                print_info "    ✓ Port 8080 is listening"
-                
-                # Test master realm endpoint (more reliable than root)
-                if curl -s --max-time 10 "$url/realms/master" > /dev/null 2>&1; then
-                    print_success "✅ Keycloak API is responding: $url"
+            # Simple approach: just try the master realm endpoint directly
+            # Use Java/Keycloak's built-in tools since external tools are not available
+            if /opt/keycloak/bin/kcadm.sh get realms/master --server "$url" --realm master --user "${KC_ADMIN_USER}" --password "${KC_ADMIN_PASS}" --no-config 2>/dev/null >/dev/null; then
+                print_success "✅ Keycloak API is responding and admin auth works: $url"
+                KC_INTERNAL_URL="$url"
+                return 0
+            fi
+            
+            # Fallback: try without authentication first
+            print_info "    Trying unauthenticated realm check..."
+            if /opt/keycloak/bin/kcadm.sh get realms/master --server "$url" --no-config 2>/dev/null | grep -q "realm" 2>/dev/null; then
+                print_info "    ✓ Realm endpoint responds, now testing auth..."
+                # Try to authenticate
+                if /opt/keycloak/bin/kcadm.sh config credentials --server "$url" --realm master --user "${KC_ADMIN_USER}" --password "${KC_ADMIN_PASS}" 2>/dev/null; then
+                    print_success "✅ Keycloak API ready and authenticated: $url"
                     KC_INTERNAL_URL="$url"
-                    
-                    # Additional verification - check admin endpoint
-                    if curl -s --max-time 10 "$url/admin/" > /dev/null 2>&1; then
-                        print_success "✅ Admin API is also responding"
-                    fi
-                    
                     return 0
                 fi
-                
-                print_info "    ⏳ Port listening but API not ready yet"
-            else
-                print_info "    ⏳ Port 8080 not listening yet"
             fi
         done
         
-        print_info "  Waiting 5 seconds before retry..."
-        sleep 5
+        print_info "  Waiting 10 seconds before retry..."
+        sleep 10
         attempt=$((attempt + 1))
     done
     
-    print_error "❌ Keycloak API failed to become ready after $((max_attempts * 5)) seconds"
+    print_error "❌ Keycloak API failed to become ready after $((max_attempts * 10)) seconds"
     print_info "This usually means Keycloak is taking longer than expected to fully initialize"
-    print_info "Check Keycloak logs: docker-compose logs keycloak"
     
     return 1
 }
