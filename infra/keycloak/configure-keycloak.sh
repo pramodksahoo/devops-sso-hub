@@ -207,6 +207,16 @@ configure_ssl_requirements() {
         return 1
     fi
     
+    # Set master realm frontend URL for admin console external access
+    print_info "Configuring master realm frontend URL for external admin console access..."
+    local master_frontend_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080"
+    if /opt/keycloak/bin/kcadm.sh update realms/master -s "attributes.frontendUrl=${master_frontend_url}"; then
+        print_success "✅ Master realm frontend URL configured: ${master_frontend_url}"
+    else
+        print_error "❌ Failed to configure master realm frontend URL"
+        return 1
+    fi
+    
     # Configure SSL for application realm
     print_info "Configuring SSL for ${REALM_NAME} realm..."
     if /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=${ssl_mode}; then

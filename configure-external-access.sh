@@ -397,7 +397,7 @@ update_env_config() {
     local FULL_KEYCLOAK_URL="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080"
     local FULL_AUTH_BFF_URL="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3002"
     
-    # Update .env file
+    # Update .env file with all necessary external configuration
     sed -i.tmp \
         -e "s|^EXTERNAL_HOST=.*|EXTERNAL_HOST=$EXTERNAL_HOST|" \
         -e "s|^EXTERNAL_PROTOCOL=.*|EXTERNAL_PROTOCOL=$EXTERNAL_PROTOCOL|" \
@@ -408,9 +408,19 @@ update_env_config() {
         -e "s|^KC_HOSTNAME_ADMIN_URL=.*|KC_HOSTNAME_ADMIN_URL=$FULL_KEYCLOAK_URL|" \
         -e "s|^KEYCLOAK_PUBLIC_URL=.*|KEYCLOAK_PUBLIC_URL=$FULL_KEYCLOAK_URL/realms/sso-hub|" \
         -e "s|^OIDC_ISSUER=.*|OIDC_ISSUER=http://keycloak:8080/realms/sso-hub|" \
-# OIDC_DISCOVERY_URL removed - using manual OIDC configuration
         -e "s|^OIDC_REDIRECT_URI=.*|OIDC_REDIRECT_URI=$FULL_AUTH_BFF_URL/auth/callback|" \
         .env
+        
+    # Add missing environment variables if they don't exist
+    if ! grep -q "^KC_HOSTNAME_URL=" .env; then
+        echo "KC_HOSTNAME_URL=$FULL_KEYCLOAK_URL" >> .env
+    fi
+    if ! grep -q "^KC_HOSTNAME_ADMIN_URL=" .env; then
+        echo "KC_HOSTNAME_ADMIN_URL=$FULL_KEYCLOAK_URL" >> .env
+    fi
+    if ! grep -q "^EXTERNAL_PROTOCOL=" .env; then
+        echo "EXTERNAL_PROTOCOL=$EXTERNAL_PROTOCOL" >> .env
+    fi
     
     rm .env.tmp
     
@@ -418,6 +428,50 @@ update_env_config() {
     
     # Mark that external configuration is needed
     echo "NEEDS_EXTERNAL_CONFIG=true" >> .env
+}
+
+# Smart container restart for environment changes
+restart_containers_for_external_config() {
+    print_step "Restarting containers to apply external configuration..."
+    
+    # Only restart containers that need environment variable updates
+    print_info "Restarting auth-bff and nginx with new environment variables..."
+    
+    # Restart auth-bff to pick up new KEYCLOAK_PUBLIC_URL
+    docker-compose restart auth-bff
+    sleep 5
+    
+    # Restart nginx to pick up new KEYCLOAK_PUBLIC_URL in templates
+    docker-compose restart nginx 
+    sleep 5
+    
+    # Verify containers are healthy
+    local services_restarted=0
+    local total_services=2
+    
+    # Check auth-bff
+    if curl -sf --max-time 10 "http://localhost:3002/healthz" >/dev/null 2>&1; then
+        print_success "✅ auth-bff restarted successfully"
+        services_restarted=$((services_restarted + 1))
+    else
+        print_error "❌ auth-bff failed to restart properly"
+    fi
+    
+    # Check nginx (via basic HTTP test)
+    if curl -sf --max-time 10 "http://localhost/" >/dev/null 2>&1; then
+        print_success "✅ nginx restarted successfully"
+        services_restarted=$((services_restarted + 1))
+    else
+        print_error "❌ nginx failed to restart properly"
+    fi
+    
+    if [ $services_restarted -eq $total_services ]; then
+        print_success "All containers restarted successfully for external configuration"
+        return 0
+    else
+        print_error "Some containers failed to restart - external configuration may not be fully applied"
+        return 1
+    fi
 }
 
 # Update Keycloak configuration for external access
@@ -880,6 +934,13 @@ trigger_keycloak_reconfiguration() {
     fi
     
     print_success "✅ All services deployed successfully"
+    
+    # Apply external configuration to containers
+    if restart_containers_for_external_config; then
+        print_success "External configuration applied to containers"
+    else
+        print_warning "Some containers failed to restart, but continuing..."
+    fi
     
     # Final validation
     print_step "🎯 Final Validation: Testing Complete System..."

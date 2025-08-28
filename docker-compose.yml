@@ -921,10 +921,12 @@ services:
       OIDC_LOGOUT_PATH: ${OIDC_LOGOUT_PATH:-/auth/logout}
       OIDC_SCOPE: ${OIDC_SCOPE:-"openid email profile"}
       IDENTITY_HEADER_SECRET: ${IDENTITY_HEADER_SECRET:-your-hmac-secret-here}
+      SESSION_SECRET: ${SESSION_SECRET}
       
       # External Access Configuration
       EXTERNAL_HOST: ${EXTERNAL_HOST:-localhost}
       EXTERNAL_PROTOCOL: ${EXTERNAL_PROTOCOL:-http}
+      KEYCLOAK_PUBLIC_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080/realms/sso-hub}
       
       # Service URLs
       USER_SERVICE_URL: ${USER_SERVICE_URL:-http://user-service:3003}

@@ -6,7 +6,7 @@ set -e
 mkdir -p /etc/nginx/conf.d
 
 # Substitute environment variables in template
-envsubst '${OIDC_CLIENT_ID} ${OIDC_CLIENT_SECRET} ${OIDC_REDIRECT_URI} ${OIDC_LOGOUT_PATH} ${OIDC_SCOPE} ${IDENTITY_HEADER_SECRET} ${SESSION_SECRET}' \
+envsubst '${OIDC_CLIENT_ID} ${OIDC_CLIENT_SECRET} ${OIDC_REDIRECT_URI} ${OIDC_LOGOUT_PATH} ${OIDC_SCOPE} ${IDENTITY_HEADER_SECRET} ${SESSION_SECRET} ${KEYCLOAK_PUBLIC_URL}' \
   < /etc/nginx/templates/default.conf.template \
   > /etc/nginx/conf.d/default.conf
 
