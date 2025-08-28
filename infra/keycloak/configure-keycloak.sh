@@ -145,7 +145,7 @@ find_keycloak_url() {
     return 1
 }
 
-# Wait for Keycloak to be ready
+# Wait for Keycloak to be ready (using kcadm.sh only)
 wait_for_keycloak() {
     print_info "Waiting for Keycloak admin API to be ready..."
     
@@ -153,11 +153,9 @@ wait_for_keycloak() {
     local attempt=1
     
     while [ $attempt -le $max_attempts ]; do
-        if curl -s --max-time 10 "${KC_INTERNAL_URL}/admin/master/console" > /dev/null 2>&1; then
+        # Test using kcadm.sh to check if master realm is accessible
+        if /opt/keycloak/bin/kcadm.sh get realms/master --server "${KC_INTERNAL_URL}" --no-config 2>/dev/null | grep -q "master"; then
             print_success "Keycloak admin API is ready"
-            return 0
-        elif curl -s --max-time 10 "${KC_INTERNAL_URL}/realms/master" > /dev/null 2>&1; then
-            print_success "Keycloak is responding (master realm accessible)"
             return 0
         fi
         
@@ -222,8 +220,8 @@ configure_ssl_requirements() {
     # Verify SSL configuration
     print_info "Verifying SSL configuration..."
     
-    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | cut -d'"' -f4 || echo "unknown")
-    local app_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | cut -d'"' -f4 || echo "unknown")
+    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | sed 's/.*"sslRequired" : "\([^"]*\)".*/\1/' || echo "unknown")
+    local app_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | sed 's/.*"sslRequired" : "\([^"]*\)".*/\1/' || echo "unknown")
     
     print_info "=== SSL Configuration Verification ==="
     print_info "  Target SSL Mode: ${ssl_mode}"
@@ -259,17 +257,29 @@ update_client_configuration() {
     print_info "  - External: ${auth_callback_uri}, ${frontend_uri}"
     print_info "  - Local: ${localhost_callback}, ${localhost_frontend}"
     
-    # Get client internal ID using kcadm.sh without jq dependency
+    # Get client internal ID using kcadm.sh without external tool dependencies
     print_info "Searching for client: ${CLIENT_ID}"
     local client_list_output=$(/opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields id,clientId 2>/dev/null)
     
-    # Extract client ID using grep and awk (no jq dependency)
-    local client_internal_id=$(echo "$client_list_output" | grep -A 2 -B 2 "\"clientId\" : \"${CLIENT_ID}\"" | grep "\"id\"" | head -1 | awk -F'"' '{print $4}')
+    # Extract client ID using shell-native string manipulation
+    local client_internal_id=""
+    if [[ -n "$client_list_output" ]]; then
+        # Look for the specific client ID in the JSON output
+        local client_block=$(echo "$client_list_output" | grep -A 3 -B 3 "\"clientId\" : \"${CLIENT_ID}\"" | head -7)
+        if [[ -n "$client_block" ]]; then
+            # Extract the "id" field from the same block using cut and sed
+            client_internal_id=$(echo "$client_block" | grep "\"id\"" | head -1 | sed 's/.*"id" : "\([^"]*\)".*/\1/')
+        fi
+    fi
     
     if [ -z "$client_internal_id" ]; then
         print_error "Could not find client ${CLIENT_ID} in realm ${REALM_NAME}"
         print_info "Available clients:"
-        echo "$client_list_output" | grep "clientId" | awk -F'"' '{print "  - " $4}' || echo "Could not parse client list"
+        if [[ -n "$client_list_output" ]]; then
+            echo "$client_list_output" | grep "\"clientId\"" | sed 's/.*"clientId" : "\([^"]*\)".*/  - \1/' || echo "Could not parse client list"
+        else
+            echo "  No clients found or API error"
+        fi
         return 1
     fi
     
@@ -328,7 +338,13 @@ validate_oidc_endpoints() {
     # Test 3: Client configuration validation
     print_info "Validating client configuration..."
     local client_list_output=$(/opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields id,clientId,redirectUris 2>/dev/null)
-    local client_internal_id=$(echo "$client_list_output" | grep -A 2 -B 2 "\"clientId\" : \"${CLIENT_ID}\"" | grep "\"id\"" | head -1 | awk -F'"' '{print $4}')
+    local client_internal_id=""
+    if [[ -n "$client_list_output" ]]; then
+        local client_block=$(echo "$client_list_output" | grep -A 3 -B 3 "\"clientId\" : \"${CLIENT_ID}\"" | head -7)
+        if [[ -n "$client_block" ]]; then
+            client_internal_id=$(echo "$client_block" | grep "\"id\"" | head -1 | sed 's/.*"id" : "\([^"]*\)".*/\1/')
+        fi
+    fi
     
     if [ -n "$client_internal_id" ]; then
         print_success "✅ Client ${CLIENT_ID} found with ID: ${client_internal_id}"
@@ -355,8 +371,8 @@ validate_oidc_endpoints() {
         expected_ssl_mode="EXTERNAL"
     fi
     
-    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
-    local app_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | sed 's/.*"sslRequired" : "\([^"]*\)".*/\1/' || echo "unknown")
+    local app_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | sed 's/.*"sslRequired" : "\([^"]*\)".*/\1/' || echo "unknown")
     
     local expected_ssl_lower=$(echo "$expected_ssl_mode" | tr '[:upper:]' '[:lower:]')
     local master_ssl_lower=$(echo "$master_ssl" | tr '[:upper:]' '[:lower:]')
@@ -406,7 +422,13 @@ validate_oidc_ready() {
     print_info "Check 2: Client redirect URI validation..."
     local expected_callback="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:${AUTH_BFF_PORT}/auth/callback"
     local client_list_output=$(/opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields id,clientId 2>/dev/null)
-    local client_internal_id=$(echo "$client_list_output" | grep -A 2 -B 2 "\"clientId\" : \"${CLIENT_ID}\"" | grep "\"id\"" | head -1 | awk -F'"' '{print $4}')
+    local client_internal_id=""
+    if [[ -n "$client_list_output" ]]; then
+        local client_block=$(echo "$client_list_output" | grep -A 3 -B 3 "\"clientId\" : \"${CLIENT_ID}\"" | head -7)
+        if [[ -n "$client_block" ]]; then
+            client_internal_id=$(echo "$client_block" | grep "\"id\"" | head -1 | sed 's/.*"id" : "\([^"]*\)".*/\1/')
+        fi
+    fi
     
     if [ -n "$client_internal_id" ]; then
         local client_config=$(/opt/keycloak/bin/kcadm.sh get clients/${client_internal_id} -r "${REALM_NAME}" --fields redirectUris 2>/dev/null)
@@ -428,7 +450,7 @@ validate_oidc_ready() {
         expected_ssl="EXTERNAL"
     fi
     
-    local realm_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    local realm_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | sed 's/.*"sslRequired" : "\([^"]*\)".*/\1/' || echo "unknown")
     local expected_ssl_lower=$(echo "$expected_ssl" | tr '[:upper:]' '[:lower:]')
     local realm_ssl_lower=$(echo "$realm_ssl" | tr '[:upper:]' '[:lower:]')
     
@@ -442,7 +464,7 @@ validate_oidc_ready() {
     
     # Check 4: Admin realm SSL configuration
     print_info "Check 4: Master realm SSL configuration..."
-    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | sed 's/.*"sslRequired" : "\([^"]*\)".*/\1/' || echo "unknown")
     local master_ssl_lower=$(echo "$master_ssl" | tr '[:upper:]' '[:lower:]')
     
     if [[ "$master_ssl_lower" == "$expected_ssl_lower" ]]; then
@@ -494,7 +516,7 @@ test_configuration() {
     fi
     
     # Test that SSL is properly configured
-    local ssl_required=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    local ssl_required=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | sed 's/.*"sslRequired" : "\([^"]*\)".*/\1/' || echo "unknown")
     local expected_ssl="NONE"
     if [[ "${EXTERNAL_PROTOCOL}" == "https" ]]; then
         expected_ssl="EXTERNAL"

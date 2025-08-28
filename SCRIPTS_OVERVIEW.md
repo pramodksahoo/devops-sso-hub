@@ -67,9 +67,6 @@ This document explains all the scripts available in SSO Hub and their purposes.
 
 ### **SSL Certificate Management**
 ```bash
-# For self-signed certificates (IP addresses)
-./ssl-setup.sh
-
 # For Let's Encrypt certificates (domain names)
 ./ssl-setup.sh
 
