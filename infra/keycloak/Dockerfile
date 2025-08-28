@@ -3,6 +3,11 @@ FROM quay.io/keycloak/keycloak:24.0
 # Switch to root user for file operations
 USER root
 
+# Install required tools for configuration scripts
+RUN microdnf update -y && \
+    microdnf install -y curl netcat-openbsd procps && \
+    microdnf clean all
+
 # Create directories and ensure they exist
 RUN mkdir -p /opt/keycloak/bin \
     && mkdir -p /opt/keycloak/themes \

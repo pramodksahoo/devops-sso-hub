@@ -560,14 +560,10 @@ trigger_keycloak_reconfiguration() {
             print_warning "Keycloak initialization timeout - proceeding anyway"
             print_info "Container may still be starting up. Check status with: docker-compose logs keycloak"
         else
-            # Trigger the configuration script to run again
-            print_info "Triggering SSL and redirect URI configuration..."
-            if docker-compose exec -T keycloak bash -c "/opt/keycloak/bin/configure-keycloak.sh" 2>/dev/null; then
-                print_success "Keycloak reconfiguration completed"
-            else
-                print_warning "Keycloak configuration script failed, but continuing..."
-                print_info "The configuration will be applied automatically on next container restart"
-            fi
+            # Configuration will be handled automatically by the entrypoint script
+            print_info "Keycloak is ready - configuration will be applied automatically"
+            print_info "The entrypoint script will handle SSL disabling and redirect URI updates"
+            print_success "Configuration will be applied in the background (60 seconds delay)"
         fi
     else
         print_error "Failed to restart Keycloak"

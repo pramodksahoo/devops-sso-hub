@@ -31,15 +31,26 @@ run_keycloak_configuration() {
     # Run configuration script in background
     (
         # Wait for Keycloak to be fully ready and initialized
-        sleep 60
+        print_info "Waiting for Keycloak to fully initialize before configuration..."
+        sleep 30
+        print_info "Configuration will start in 60 more seconds..."
+        sleep 30
+        print_info "Configuration will start in 30 more seconds..."
+        sleep 30
         
         print_info "Running complete Keycloak configuration..."
         # Run the consolidated configuration script
         /opt/keycloak/bin/configure-keycloak.sh
         
+        if [ $? -eq 0 ]; then
+            print_success "Keycloak configuration completed successfully!"
+        else
+            print_error "Keycloak configuration failed - check logs for details"
+        fi
+        
     ) &
     
-    print_success "Keycloak configuration started in background"
+    print_success "Keycloak configuration scheduled in background (90 second delay)"
 }
 
 # Function to handle shutdown

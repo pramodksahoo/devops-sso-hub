@@ -102,33 +102,48 @@ show_current_config() {
 
 # Find working Keycloak URL (internal container connectivity)
 find_keycloak_url() {
-    print_info "Testing internal Keycloak connectivity..."
+    print_info "Waiting for Keycloak to be ready for API calls..."
     
-    for url in "${KC_INTERNAL_URLS[@]}"; do
-        print_info "Testing: $url"
+    local max_attempts=40
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        print_info "Attempt ${attempt}/${max_attempts} - checking Keycloak readiness..."
         
-        # Test basic connectivity
-        if curl -s --max-time 5 "$url" > /dev/null 2>&1; then
-            print_success "✅ Found working internal Keycloak URL: $url"
-            KC_INTERNAL_URL="$url"
-            return 0
-        fi
+        for url in "${KC_INTERNAL_URLS[@]}"; do
+            print_info "  Testing: $url"
+            
+            # First check if the port is listening
+            if nc -z localhost 8080 2>/dev/null; then
+                print_info "    ✓ Port 8080 is listening"
+                
+                # Test master realm endpoint (more reliable than root)
+                if curl -s --max-time 10 "$url/realms/master" > /dev/null 2>&1; then
+                    print_success "✅ Keycloak API is responding: $url"
+                    KC_INTERNAL_URL="$url"
+                    
+                    # Additional verification - check admin endpoint
+                    if curl -s --max-time 10 "$url/admin/" > /dev/null 2>&1; then
+                        print_success "✅ Admin API is also responding"
+                    fi
+                    
+                    return 0
+                fi
+                
+                print_info "    ⏳ Port listening but API not ready yet"
+            else
+                print_info "    ⏳ Port 8080 not listening yet"
+            fi
+        done
         
-        # Test master realm endpoint
-        if curl -s --max-time 5 "$url/realms/master" > /dev/null 2>&1; then
-            print_success "✅ Found working internal Keycloak URL (via master realm): $url"
-            KC_INTERNAL_URL="$url"
-            return 0
-        fi
-        
-        print_warning "  No response from $url"
+        print_info "  Waiting 5 seconds before retry..."
+        sleep 5
+        attempt=$((attempt + 1))
     done
     
-    print_error "❌ Could not connect to Keycloak on any internal URL"
-    print_info "Troubleshooting information:"
-    print_info "  - This script runs inside the Keycloak container"
-    print_info "  - It should connect to localhost/127.0.0.1 on port 8080"
-    print_info "  - If Keycloak just started, it may need more time to initialize"
+    print_error "❌ Keycloak API failed to become ready after $((max_attempts * 5)) seconds"
+    print_info "This usually means Keycloak is taking longer than expected to fully initialize"
+    print_info "Check Keycloak logs: docker-compose logs keycloak"
     
     return 1
 }
@@ -176,17 +191,48 @@ disable_ssl_requirements() {
     print_info "Disabling SSL requirements for HTTP access..."
     
     # Disable SSL for master realm (admin console)
-    if /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE; then
-        print_success "SSL disabled for master realm"
+    print_info "Disabling SSL for master realm..."
+    if /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE 2>/dev/null; then
+        print_success "✅ SSL disabled for master realm"
     else
-        print_warning "Could not disable SSL for master realm"
+        print_error "❌ Failed to disable SSL for master realm"
+        print_info "Attempting alternative method..."
+        # Try alternative approach
+        if /opt/keycloak/bin/kcadm.sh get realms/master 2>/dev/null | grep -q "sslRequired"; then
+            /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE --no-config-ssl 2>/dev/null || true
+        fi
     fi
     
     # Disable SSL for application realm
-    if /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=NONE; then
-        print_success "SSL disabled for ${REALM_NAME} realm"
+    print_info "Disabling SSL for ${REALM_NAME} realm..."
+    if /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=NONE 2>/dev/null; then
+        print_success "✅ SSL disabled for ${REALM_NAME} realm"
     else
-        print_warning "Could not disable SSL for ${REALM_NAME} realm"
+        print_error "❌ Failed to disable SSL for ${REALM_NAME} realm"
+        print_info "Attempting alternative method..."
+        # Try alternative approach
+        if /opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} 2>/dev/null | grep -q "sslRequired"; then
+            /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=NONE --no-config-ssl 2>/dev/null || true
+        fi
+    fi
+    
+    # Verify SSL is disabled
+    print_info "Verifying SSL requirements are disabled..."
+    
+    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    local app_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    
+    print_info "SSL Status Check:"
+    print_info "  Master realm SSL requirement: ${master_ssl}"
+    print_info "  ${REALM_NAME} realm SSL requirement: ${app_ssl}"
+    
+    if [[ "$master_ssl" == "NONE" && "$app_ssl" == "NONE" ]]; then
+        print_success "✅ SSL requirements successfully disabled for both realms"
+        return 0
+    else
+        print_warning "⚠️  SSL requirements may not be fully disabled"
+        print_warning "  This could cause 'ssl_required' errors during login"
+        return 1
     fi
 }
 
