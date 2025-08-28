@@ -1,4 +1,4 @@
-FROM quay.io/keycloak/keycloak:24.0
+FROM quay.io/keycloak/keycloak:25.0
 
 # Switch to root user for file operations
 USER root
@@ -33,8 +33,8 @@ RUN chmod +x /opt/keycloak/bin/configure-keycloak.sh \
 # Switch back to keycloak user
 USER keycloak
 
-# Build the Keycloak image with our theme
-RUN /opt/keycloak/bin/kc.sh build
+# Build the Keycloak image with PostgreSQL and our theme
+RUN /opt/keycloak/bin/kc.sh build --db=postgres
 
 # Set the custom entrypoint
 ENTRYPOINT ["/opt/keycloak/bin/entrypoint.sh"]

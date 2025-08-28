@@ -55,14 +55,14 @@ services:
     networks:
       - sso-network
 
-  # Keycloak Identity Provider (Latest Stable)
+  # Keycloak Identity Provider (v25.0 - Stable Production)
   keycloak:
     build:
       context: ./infra/keycloak
       dockerfile: Dockerfile
     container_name: sso-keycloak
     environment:
-      # Admin credentials (Keycloak 24.0 format)
+      # Admin credentials (Keycloak 25.0 format)
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin_secure_password_123}
       
@@ -72,14 +72,15 @@ services:
       KC_DB_USERNAME: ${KC_DB_USERNAME:-keycloak_user}
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:-keycloak_password}
       
-      # Network configuration (v2 format - Keycloak 2024)  
-      # Use KC_HOSTNAME_URL for full URL control (KC_HOSTNAME and KC_HOSTNAME_URL are mutually exclusive)
-      KC_HOSTNAME_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:8080
+      # Network configuration (Keycloak 25.0 production mode)
+      # Production mode requires explicit hostname configuration
+      KC_HOSTNAME: ${EXTERNAL_HOST:-localhost}
+      KC_HOSTNAME_PORT: 8080
       KC_HOSTNAME_ADMIN_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:8080
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
-      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "false"
       KC_HTTP_ENABLED: "true"
       KC_HTTP_PORT: "8080"
       KC_PROXY_HEADERS: "xforwarded"
@@ -88,13 +89,15 @@ services:
       KC_SPI_TRUSTSTORE_FILE_PASSWORD: "password"
       KC_SPI_TRUSTSTORE_FILE_FILE: ""
       
-      # Enable health and metrics
-      KC_HEALTH_ENABLED: "true"
+      # Production mode features and logging
+      KC_LOG_LEVEL: "INFO"
       KC_METRICS_ENABLED: "true"
-      
-      # Logging
-      KC_LOG_LEVEL: INFO
+      KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME_DEBUG: "true"
+      
+      # Production optimizations for Docker
+      KC_CACHE: "ispn"
+      KC_CACHE_STACK: "tcp"
       
       # Force realm import to overwrite existing
       KC_SPI_IMPORT_REALM_STRATEGY: OVERWRITE_EXISTING
@@ -105,7 +108,7 @@ services:
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-sso-hub}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-sso-hub-client}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-sso-client-secret}
-    command: start-dev --import-realm
+    command: start --optimized --hostname=localhost --hostname-strict=false --import-realm
     ports:
       - "8080:8080"
       - "9000:9000"  # Management port for health checks
