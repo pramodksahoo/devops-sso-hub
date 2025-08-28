@@ -38,14 +38,24 @@ const server = fastify({
 // Global variables
 let oidcClient = null;
 
-// OIDC Client initialization
+// OIDC Client initialization - Manual configuration (no discovery endpoint dependency)
 async function initializeOIDC() {
   try {
     console.log('🔧 Initializing OIDC client...');
     console.log('🔗 OIDC Issuer URL:', config.OIDC_ISSUER);
     
-    const issuer = await Issuer.discover(config.OIDC_ISSUER);
-    console.log('✅ OIDC discovery successful');
+    // Manual OIDC issuer configuration (bypassing discovery endpoint)
+    const issuer = new Issuer({
+      issuer: config.OIDC_ISSUER,
+      authorization_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/auth`,
+      token_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/token`,
+      userinfo_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/userinfo`,
+      jwks_uri: `${config.OIDC_ISSUER}/protocol/openid-connect/certs`,
+      end_session_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/logout`,
+      introspection_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/token/introspect`,
+      revocation_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/revoke`
+    });
+    console.log('✅ OIDC manual configuration successful');
     console.log('🔍 Raw authorization endpoint:', issuer.authorization_endpoint);
     console.log('🔍 Raw token endpoint:', issuer.token_endpoint);
     
@@ -688,14 +698,15 @@ async function registerProxyRoutes(server) {
       }
       
       if (integrationType === 'oidc') {
-        // Return OIDC configuration
+        // Return OIDC configuration (manual endpoints, no discovery URL)
         const oidcConfig = {
           client_id: clientCreds.client_id,
           client_secret: clientCreds.client_secret,
-          discovery_url: `${baseUrl}/.well-known/openid_configuration`,
           auth_url: `${baseUrl}/protocol/openid-connect/auth`,
           token_url: `${baseUrl}/protocol/openid-connect/token`, 
           userinfo_url: `${baseUrl}/protocol/openid-connect/userinfo`,
+          jwks_url: `${baseUrl}/protocol/openid-connect/certs`,
+          logout_url: `${baseUrl}/protocol/openid-connect/logout`,
           scopes: 'openid profile email groups',
           redirect_uri: clientCreds.redirect_uri
         };

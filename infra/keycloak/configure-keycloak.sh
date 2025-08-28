@@ -52,6 +52,7 @@ KC_INTERNAL_URLS=("http://localhost:8080" "http://127.0.0.1:8080" "http://0.0.0.
 # External configuration (for client redirects and public access)
 EXTERNAL_HOST=${EXTERNAL_HOST:-localhost}
 EXTERNAL_PROTOCOL=${EXTERNAL_PROTOCOL:-http}
+NEEDS_EXTERNAL_CONFIG=${NEEDS_EXTERNAL_CONFIG:-false}
 AUTH_BFF_PORT=${AUTH_BFF_PORT:-3002}
 FRONTEND_PORT=${FRONTEND_PORT:-3000}
 
@@ -606,7 +607,7 @@ show_diagnostic_info() {
     print_info "  - Keycloak Admin: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/admin"
     print_info "  - Frontend: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:${FRONTEND_PORT}"
     print_info "  - Auth BFF: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:${AUTH_BFF_PORT}"
-    print_info "  - OIDC Discovery: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/${REALM_NAME}/.well-known/openid_configuration"
+    print_info "  - OIDC Auth URL: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/${REALM_NAME}/protocol/openid-connect/auth"
 }
 
 # Main execution
@@ -620,7 +621,7 @@ main() {
     print_info "Running inside Keycloak container - using internal connectivity"
     
     # Check if external host is actually different from localhost
-    if [[ "${EXTERNAL_HOST}" == "localhost" || "${EXTERNAL_HOST}" == "127.0.0.1" ]]; then
+    if [[ "${EXTERNAL_HOST}" == "localhost" || "${EXTERNAL_HOST}" == "127.0.0.1" ]] && [[ "${NEEDS_EXTERNAL_CONFIG}" != "true" ]]; then
         print_success "✅ External host is localhost - skipping external configuration"
         print_info "Keycloak realm is pre-configured for local development"
         print_info "SSL requirements remain as configured in realm import"

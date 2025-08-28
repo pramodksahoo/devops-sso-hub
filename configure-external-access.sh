@@ -408,7 +408,7 @@ update_env_config() {
         -e "s|^KC_HOSTNAME_ADMIN_URL=.*|KC_HOSTNAME_ADMIN_URL=$FULL_KEYCLOAK_URL|" \
         -e "s|^KEYCLOAK_PUBLIC_URL=.*|KEYCLOAK_PUBLIC_URL=$FULL_KEYCLOAK_URL/realms/sso-hub|" \
         -e "s|^OIDC_ISSUER=.*|OIDC_ISSUER=http://keycloak:8080/realms/sso-hub|" \
-        -e "s|^OIDC_DISCOVERY_URL=.*|OIDC_DISCOVERY_URL=$FULL_KEYCLOAK_URL/realms/sso-hub/.well-known/openid_configuration|" \
+# OIDC_DISCOVERY_URL removed - using manual OIDC configuration
         -e "s|^OIDC_REDIRECT_URI=.*|OIDC_REDIRECT_URI=$FULL_AUTH_BFF_URL/auth/callback|" \
         .env
     
@@ -416,29 +416,49 @@ update_env_config() {
     
     print_success "Environment configuration updated"
     
-    # Restart Keycloak to apply new hostname configuration
-    print_step "Restarting Keycloak to apply hostname changes..."
-    docker-compose restart keycloak
+    # Mark that external configuration is needed
+    echo "NEEDS_EXTERNAL_CONFIG=true" >> .env
+}
+
+# Update Keycloak configuration for external access
+update_keycloak_config() {
+    print_step "Updating Keycloak configuration for external access..."
     
     # Wait for Keycloak to be ready
-    print_info "Waiting for Keycloak to restart (30 seconds)..."
-    sleep 30
-    
-    # Verify Keycloak is accessible
     local retries=0
     local max_retries=12
     while [ $retries -lt $max_retries ]; do
         if curl -sf http://localhost:8080/realms/master >/dev/null 2>&1; then
-            print_success "Keycloak restarted successfully"
             break
         fi
         retries=$((retries + 1))
         if [ $retries -eq $max_retries ]; then
-            print_error "Keycloak failed to restart properly"
+            print_error "Keycloak is not responding - configuration update failed"
             return 1
         fi
-        sleep 5
+        print_info "Waiting for Keycloak... (attempt $retries/$max_retries)"
+        sleep 10
     done
+    
+    print_success "Keycloak is ready for configuration updates"
+    return 0
+}
+
+# Trigger Keycloak reconfiguration for external access
+trigger_keycloak_reconfiguration() {
+    print_step "Triggering Keycloak reconfiguration for external access..."
+    
+    # Execute the configuration script inside Keycloak container
+    docker-compose exec -T keycloak /opt/keycloak/bin/configure-keycloak.sh
+    
+    if [ $? -eq 0 ]; then
+        print_success "✅ Keycloak reconfiguration completed"
+        # Remove the flag
+        sed -i '/NEEDS_EXTERNAL_CONFIG=true/d' .env 2>/dev/null || true
+    else
+        print_error "❌ Keycloak reconfiguration failed"
+        return 1
+    fi
 }
 
 # Generate SSL certificates (Let's Encrypt only)
@@ -579,7 +599,7 @@ validate_oidc_configuration() {
         
         # Test 4: Validate OIDC functionality (bypassing known Keycloak 24.0 discovery endpoint bug)
         print_info "Step 4: Testing OIDC functionality..."
-        print_info "Note: Bypassing discovery endpoint due to Keycloak 24.0 development mode limitations"
+        print_info "Note: Using manual OIDC configuration (discovery endpoint not needed)"
         
         # Test OIDC auth endpoint instead of discovery endpoint
         print_info "Testing OIDC auth endpoint functionality..."
@@ -714,7 +734,7 @@ show_configuration_summary() {
     echo -e "  • Auth BFF:      ${GREEN}$FULL_AUTH_BFF_URL${NC}"
     echo -e "  • API Docs:      ${GREEN}${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3006/docs${NC}"
     echo -e "  • Health:        ${GREEN}${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3004${NC}"
-    echo -e "  • OIDC Discovery:${GREEN}$FULL_KEYCLOAK_URL/realms/sso-hub/.well-known/openid_configuration${NC}"
+    echo -e "  • OIDC Auth URL: ${GREEN}$FULL_KEYCLOAK_URL/realms/sso-hub/protocol/openid-connect/auth${NC}"
     echo ""
     
     echo -e "${CYAN}🔧 Configuration:${NC}"

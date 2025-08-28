@@ -112,7 +112,12 @@ server {
         access_by_lua_block {
             local oidc = require("resty.openidc")
             local opts = {
-                discovery = "${OIDC_DISCOVERY_URL}",
+                -- Manual OIDC endpoints (no discovery)
+                issuer = "http://keycloak:8080/realms/sso-hub",
+                authorization_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/auth",
+                token_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/token",
+                userinfo_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/userinfo",
+                jwks_uri = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/certs",
                 client_id = "${OIDC_CLIENT_ID}",
                 client_secret = "${OIDC_CLIENT_SECRET}",
                 redirect_uri = "${OIDC_REDIRECT_URI}",
@@ -157,7 +162,12 @@ server {
             end
             
             local opts = {
-                discovery = "${OIDC_DISCOVERY_URL}",
+                -- Manual OIDC endpoints (no discovery)
+                issuer = "http://keycloak:8080/realms/sso-hub",
+                authorization_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/auth",
+                token_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/token",
+                userinfo_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/userinfo",
+                jwks_uri = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/certs",
                 client_id = "${OIDC_CLIENT_ID}",
                 logout_path = "${OIDC_LOGOUT_PATH}",
                 post_logout_redirect_uri = redirect_base .. "/"
@@ -209,7 +219,12 @@ server {
         access_by_lua_block {
             local oidc = require("resty.openidc")
             local opts = {
-                discovery = "${OIDC_DISCOVERY_URL}",
+                -- Manual OIDC endpoints (no discovery)
+                issuer = "http://keycloak:8080/realms/sso-hub",
+                authorization_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/auth",
+                token_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/token",
+                userinfo_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/userinfo",
+                jwks_uri = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/certs",
                 client_id = "${OIDC_CLIENT_ID}",
                 client_secret = "${OIDC_CLIENT_SECRET}",
                 redirect_uri = "${OIDC_REDIRECT_URI}",
@@ -254,7 +269,12 @@ server {
             local str = require("resty.string")
             
             local opts = {
-                discovery = "${OIDC_DISCOVERY_URL}",
+                -- Manual OIDC endpoints (no discovery)
+                issuer = "http://keycloak:8080/realms/sso-hub",
+                authorization_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/auth",
+                token_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/token",
+                userinfo_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/userinfo",
+                jwks_uri = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/certs",
                 client_id = "${OIDC_CLIENT_ID}",
                 client_secret = "${OIDC_CLIENT_SECRET}",
                 redirect_uri = "${OIDC_REDIRECT_URI}",
@@ -317,7 +337,12 @@ server {
         access_by_lua_block {
             local oidc = require("resty.openidc")
             local opts = {
-                discovery = "${OIDC_DISCOVERY_URL}",
+                -- Manual OIDC endpoints (no discovery)
+                issuer = "http://keycloak:8080/realms/sso-hub",
+                authorization_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/auth",
+                token_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/token",
+                userinfo_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/userinfo",
+                jwks_uri = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/certs",
                 client_id = "${OIDC_CLIENT_ID}",
                 client_secret = "${OIDC_CLIENT_SECRET}",
                 redirect_uri = "${OIDC_REDIRECT_URI}",
@@ -351,7 +376,12 @@ server {
         access_by_lua_block {
             local oidc = require("resty.openidc")
             local opts = {
-                discovery = "${OIDC_DISCOVERY_URL}",
+                -- Manual OIDC endpoints (no discovery)
+                issuer = "http://keycloak:8080/realms/sso-hub",
+                authorization_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/auth",
+                token_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/token",
+                userinfo_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/userinfo",
+                jwks_uri = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/certs",
                 client_id = "${OIDC_CLIENT_ID}",
                 client_secret = "${OIDC_CLIENT_SECRET}",
                 redirect_uri = "${OIDC_REDIRECT_URI}",
