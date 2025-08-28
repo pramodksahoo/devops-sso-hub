@@ -137,7 +137,7 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       
       # OIDC Configuration
-      OIDC_ISSUER: http://keycloak:8080/realms/sso-hub
+      OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/sso-hub}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-sso-hub-client}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-sso-client-secret}
       OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:3002/auth/callback}
