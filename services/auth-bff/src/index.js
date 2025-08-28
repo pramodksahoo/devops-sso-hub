@@ -12,8 +12,9 @@ const config = {
   PORT: process.env.PORT || 3002,
   HOST: process.env.HOST || '0.0.0.0',
   
-  // OIDC Configuration (Use keycloak for container-to-container communication)
+  // OIDC Configuration - Environment aware
   OIDC_ISSUER: process.env.OIDC_ISSUER || 'http://keycloak:8080/realms/sso-hub',
+  OIDC_PUBLIC_URL: process.env.KEYCLOAK_PUBLIC_URL || process.env.OIDC_ISSUER || 'http://localhost:8080/realms/sso-hub',
   OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID || 'sso-hub-client',
   OIDC_CLIENT_SECRET: process.env.OIDC_CLIENT_SECRET || 'your-client-secret',
   OIDC_REDIRECT_URI: process.env.OIDC_REDIRECT_URI || 'http://localhost:3002/auth/callback',
@@ -48,17 +49,25 @@ async function initializeOIDC() {
     console.log('🔍 Raw authorization endpoint:', issuer.authorization_endpoint);
     console.log('🔍 Raw token endpoint:', issuer.token_endpoint);
     
-    // CRITICAL FIX: Create new issuer with corrected endpoints for container networking
-    // Authorization: localhost:8080 (for browser) | Token/API: keycloak:8080 (for server)
+    // SMART FIX: Create issuer with environment-aware endpoint correction
+    // Browser endpoints: Use public URL | Server endpoints: Use internal keycloak URL
+    const publicUrl = config.OIDC_PUBLIC_URL.replace('/realms/sso-hub', '');
+    const internalUrl = config.OIDC_ISSUER.replace('/realms/sso-hub', '');
+    
+    console.log('🔧 Public URL (for browser):', publicUrl);
+    console.log('🔧 Internal URL (for server):', internalUrl);
+    
     const correctedIssuer = new Issuer({
       issuer: issuer.issuer,
-      authorization_endpoint: issuer.authorization_endpoint, // Keep localhost for browser
-      token_endpoint: issuer.token_endpoint.replace('localhost:8080', 'keycloak:8080'),
-      userinfo_endpoint: issuer.userinfo_endpoint?.replace('localhost:8080', 'keycloak:8080'),
-      jwks_uri: issuer.jwks_uri?.replace('localhost:8080', 'keycloak:8080'),
-      end_session_endpoint: issuer.end_session_endpoint,
-      introspection_endpoint: issuer.introspection_endpoint?.replace('localhost:8080', 'keycloak:8080'),
-      revocation_endpoint: issuer.revocation_endpoint?.replace('localhost:8080', 'keycloak:8080')
+      // Browser-facing endpoints use public URL
+      authorization_endpoint: issuer.authorization_endpoint.replace(internalUrl, publicUrl),
+      end_session_endpoint: issuer.end_session_endpoint?.replace(internalUrl, publicUrl),
+      // Server-side endpoints use internal URL for container communication  
+      token_endpoint: issuer.token_endpoint.replace(publicUrl, internalUrl),
+      userinfo_endpoint: issuer.userinfo_endpoint?.replace(publicUrl, internalUrl),
+      jwks_uri: issuer.jwks_uri?.replace(publicUrl, internalUrl),
+      introspection_endpoint: issuer.introspection_endpoint?.replace(publicUrl, internalUrl),
+      revocation_endpoint: issuer.revocation_endpoint?.replace(publicUrl, internalUrl)
     });
     
     console.log('🔧 Corrected authorization endpoint (browser):', correctedIssuer.authorization_endpoint);

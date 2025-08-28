@@ -404,8 +404,10 @@ update_env_config() {
         -e "s|^EXTERNAL_PORT=.*|EXTERNAL_PORT=$EXTERNAL_PORT|" \
         -e "s|^FRONTEND_URL=.*|FRONTEND_URL=$FULL_FRONTEND_URL|" \
         -e "s|^CORS_ORIGIN=.*|CORS_ORIGIN=$FULL_FRONTEND_URL|" \
-        -e "s|^KC_HOSTNAME=.*|KC_HOSTNAME=$EXTERNAL_HOST|" \
+        -e "s|^KC_HOSTNAME_URL=.*|KC_HOSTNAME_URL=$FULL_KEYCLOAK_URL|" \
+        -e "s|^KC_HOSTNAME_ADMIN_URL=.*|KC_HOSTNAME_ADMIN_URL=$FULL_KEYCLOAK_URL|" \
         -e "s|^KEYCLOAK_PUBLIC_URL=.*|KEYCLOAK_PUBLIC_URL=$FULL_KEYCLOAK_URL/realms/sso-hub|" \
+        -e "s|^OIDC_ISSUER=.*|OIDC_ISSUER=http://keycloak:8080/realms/sso-hub|" \
         -e "s|^OIDC_DISCOVERY_URL=.*|OIDC_DISCOVERY_URL=$FULL_KEYCLOAK_URL/realms/sso-hub/.well-known/openid_configuration|" \
         -e "s|^OIDC_REDIRECT_URI=.*|OIDC_REDIRECT_URI=$FULL_AUTH_BFF_URL/auth/callback|" \
         .env
@@ -1011,6 +1013,22 @@ main() {
         print_error "Failed to setup SSL certificates"
         exit 1
     fi
+    
+    # Restart services with new environment variables
+    print_step "Restarting services with updated configuration..."
+    print_info "Stopping services to apply new environment variables..."
+    docker-compose stop keycloak auth-bff 2>/dev/null || true
+    sleep 5
+    
+    print_info "Starting Keycloak with external configuration..."
+    docker-compose up -d keycloak
+    sleep 30
+    
+    print_info "Starting auth-bff with updated OIDC configuration..."
+    docker-compose up -d auth-bff
+    sleep 10
+    
+    print_success "✅ Services restarted with external configuration"
     
     # Update Keycloak configuration
     update_keycloak_config
