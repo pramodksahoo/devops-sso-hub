@@ -96,6 +96,13 @@ services:
       
       # Force realm import to overwrite existing
       KC_SPI_IMPORT_REALM_STRATEGY: OVERWRITE_EXISTING
+      
+      # External access configuration (passed from .env)
+      EXTERNAL_HOST: ${EXTERNAL_HOST:-localhost}
+      EXTERNAL_PROTOCOL: ${EXTERNAL_PROTOCOL:-http}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-sso-hub}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-sso-hub-client}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-sso-client-secret}
     command: start-dev --import-realm
     ports:
       - "8080:8080"

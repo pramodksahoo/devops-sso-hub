@@ -6,22 +6,40 @@
 
 set -e
 
-# Load current environment variables (including any updates)
-load_current_environment() {
-    # Try to source updated environment variables from the .env file if it exists
-    if [ -f "/.env" ]; then
-        echo "[KEYCLOAK-CONFIG] Loading environment from /.env (container)"
-        source /.env 2>/dev/null || true
-    elif [ -f "/app/.env" ]; then
-        echo "[KEYCLOAK-CONFIG] Loading environment from /app/.env"
-        source /app/.env 2>/dev/null || true
+# Validate that required environment variables are available
+validate_environment() {
+    print_info "Validating environment variables from Docker Compose..."
+    
+    # Critical variables for Keycloak configuration
+    local required_vars=(
+        "EXTERNAL_HOST"
+        "EXTERNAL_PROTOCOL" 
+        "KEYCLOAK_REALM"
+        "OIDC_CLIENT_ID"
+        "OIDC_CLIENT_SECRET"
+    )
+    
+    local missing_vars=()
+    
+    for var in "${required_vars[@]}"; do
+        if [ -z "${!var}" ]; then
+            missing_vars+=("$var")
+        else
+            print_info "  ✓ $var = ${!var}"
+        fi
+    done
+    
+    if [ ${#missing_vars[@]} -gt 0 ]; then
+        print_error "Missing required environment variables:"
+        for var in "${missing_vars[@]}"; do
+            print_error "  ✗ $var"
+        done
+        print_error "These must be set in docker-compose.yml environment section"
+        return 1
     fi
     
-    # Also check for any environment file in working directory
-    if [ -f ".env" ]; then
-        echo "[KEYCLOAK-CONFIG] Loading environment from .env (working directory)"
-        source .env 2>/dev/null || true
-    fi
+    print_success "All required environment variables are available"
+    return 0
 }
 
 # Environment variables with defaults
@@ -65,8 +83,11 @@ print_warning() {
     echo -e "${YELLOW}[KEYCLOAK-CONFIG]${NC} $1"
 }
 
-# Now load current environment with proper logging
-load_current_environment
+# Validate environment variables from Docker Compose
+if ! validate_environment; then
+    print_error "Environment validation failed - ensure all variables are set in docker-compose.yml"
+    exit 1
+fi
 
 # Show current configuration for debugging
 show_current_config() {

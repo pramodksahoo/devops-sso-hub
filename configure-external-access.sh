@@ -521,29 +521,44 @@ trigger_keycloak_reconfiguration() {
         return 0
     fi
     
-    print_info "Restarting Keycloak with new configuration..."
+    print_info "Recreating Keycloak container with new environment variables..."
     
-    # Restart Keycloak to apply new environment variables
-    if docker-compose restart keycloak; then
-        print_success "Keycloak restarted successfully"
+    # Stop and recreate Keycloak container to apply new environment variables
+    # Docker restart doesn't pick up changed .env files, so we need to recreate
+    docker-compose stop keycloak
+    docker-compose rm -f keycloak
+    if docker-compose up -d keycloak; then
+        print_success "Keycloak recreated successfully with new environment variables"
         
-        # Wait for Keycloak to be ready
-        print_info "Waiting for Keycloak to be ready..."
-        local retries=30
-        while [ $retries -gt 0 ]; do
-            if curl -s "http://localhost:8080/health/ready" &>/dev/null || curl -s "http://$EXTERNAL_HOST:8080/health/ready" &>/dev/null; then
-                print_success "Keycloak is ready"
+        # Wait for Keycloak to be ready (this can take 60-90 seconds)
+        print_info "Waiting for Keycloak to fully initialize (this may take 60-90 seconds)..."
+        local max_wait=120
+        local wait_time=0
+        while [ $wait_time -lt $max_wait ]; do
+            # Check if container is healthy via docker-compose
+            if docker-compose ps keycloak | grep -q "healthy"; then
+                print_success "Keycloak is healthy and ready"
                 break
             fi
-            retries=$((retries - 1))
-            echo -n "."
-            sleep 2
+            
+            # Also check basic connectivity as fallback
+            if curl -s --max-time 3 "http://localhost:8080/realms/master" &>/dev/null; then
+                print_success "Keycloak is responding"
+                break
+            fi
+            
+            # Progress indicator every 15 seconds
+            if [ $((wait_time % 15)) -eq 0 ]; then
+                print_info "Still initializing... (${wait_time}s elapsed, max ${max_wait}s)"
+            fi
+            
+            sleep 5
+            wait_time=$((wait_time + 5))
         done
-        echo ""
         
-        if [ $retries -eq 0 ]; then
-            print_warning "Keycloak health check timed out, but continuing..."
-            print_info "You may need to restart services manually: docker-compose restart"
+        if [ $wait_time -ge $max_wait ]; then
+            print_warning "Keycloak initialization timeout - proceeding anyway"
+            print_info "Container may still be starting up. Check status with: docker-compose logs keycloak"
         else
             # Trigger the configuration script to run again
             print_info "Triggering SSL and redirect URI configuration..."
