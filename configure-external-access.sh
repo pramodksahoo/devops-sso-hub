@@ -481,18 +481,38 @@ validate_oidc_configuration() {
         
         # Test 1: Verify Keycloak is accessible locally first (from host system)
         print_info "Step 1: Testing local Keycloak accessibility..."
-        if ! curl -sf --connect-timeout 5 --max-time 10 "http://localhost:8080/realms/master" &>/dev/null; then
+        
+        # Test localhost first
+        local localhost_working=false
+        if curl -sf --connect-timeout 5 --max-time 10 "http://localhost:8080/realms/master" &>/dev/null; then
+            localhost_working=true
+            print_success "✅ localhost:8080 is responding"
+        else
+            print_warning "localhost:8080 not responding (may be HSTS issue)"
+            
+            # Try 127.0.0.1 as HSTS bypass
+            print_info "Trying 127.0.0.1 to bypass potential HSTS issues..."
+            if curl -sf --connect-timeout 5 --max-time 10 "http://127.0.0.1:8080/realms/master" &>/dev/null; then
+                localhost_working=true
+                print_success "✅ 127.0.0.1:8080 is responding (HSTS bypass successful)"
+                print_info "Note: Using 127.0.0.1 instead of localhost to avoid browser HSTS policies"
+            fi
+        fi
+        
+        if [ "$localhost_working" = false ]; then
             print_warning "Local Keycloak not accessible on attempt $attempt (container may not be ready)"
             if [ $attempt -eq $max_attempts ]; then
                 print_error "Local Keycloak validation failed - container not responding"
-                print_info "This suggests Keycloak container is not fully ready for external access"
+                print_info "Troubleshooting:"
+                print_info "  • Check container: docker-compose ps keycloak"  
+                print_info "  • Check logs: docker-compose logs keycloak"
+                print_info "  • Clear browser HSTS: chrome://net-internals/#hsts"
                 return 1
             fi
             sleep 15
             attempt=$((attempt + 1))
             continue
         fi
-        print_success "✅ Local Keycloak is responding"
         
         # Test 2: Check external network accessibility
         print_info "Step 2: Testing external network accessibility..."
@@ -531,21 +551,56 @@ validate_oidc_configuration() {
         fi
         print_success "✅ SSO-Hub realm is accessible externally"
         
-        # Test 4: Check if OIDC discovery endpoint is accessible
+        # Test 4: Check if OIDC discovery endpoint is accessible  
         print_info "Step 4: Testing OIDC discovery endpoint..."
-        local oidc_config_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/sso-hub/.well-known/openid_configuration"
-        print_info "Testing: $oidc_config_url"
-        if ! curl -sf --connect-timeout 10 --max-time 30 "$oidc_config_url" &>/dev/null; then
-            print_warning "OIDC discovery endpoint not accessible on attempt $attempt: $oidc_config_url"
+        
+        # First test local discovery endpoint to ensure it's working
+        print_info "Testing local discovery endpoint..."
+        local local_discovery_working=false
+        
+        # Try localhost first
+        if curl -sf --connect-timeout 10 --max-time 30 "http://localhost:8080/realms/sso-hub/.well-known/openid_configuration" &>/dev/null; then
+            local_discovery_working=true
+            print_success "✅ Local discovery endpoint working: localhost:8080"
+        else
+            # Try 127.0.0.1 as HSTS bypass
+            print_info "Trying 127.0.0.1 for local discovery endpoint..."
+            if curl -sf --connect-timeout 10 --max-time 30 "http://127.0.0.1:8080/realms/sso-hub/.well-known/openid_configuration" &>/dev/null; then
+                local_discovery_working=true
+                print_success "✅ Local discovery endpoint working: 127.0.0.1:8080 (HSTS bypass)"
+            fi
+        fi
+        
+        if [ "$local_discovery_working" = false ]; then
+            print_warning "Local OIDC discovery endpoint not working on attempt $attempt"
             if [ $attempt -eq $max_attempts ]; then
-                print_error "OIDC discovery endpoint validation failed"
+                print_error "Local OIDC discovery endpoint validation failed"
+                print_info "Discovery endpoint URLs tested:"
+                print_info "  • http://localhost:8080/realms/sso-hub/.well-known/openid_configuration"
+                print_info "  • http://127.0.0.1:8080/realms/sso-hub/.well-known/openid_configuration"
+                print_info "This suggests Keycloak realm configuration or hostname issues"
                 return 1
             fi
             sleep 15
             attempt=$((attempt + 1))
             continue
         fi
-        print_success "✅ OIDC discovery endpoint is accessible"
+        
+        # Now test external discovery endpoint
+        local oidc_config_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/sso-hub/.well-known/openid_configuration"
+        print_info "Testing external discovery endpoint: $oidc_config_url"
+        if ! curl -sf --connect-timeout 10 --max-time 30 "$oidc_config_url" &>/dev/null; then
+            print_warning "External OIDC discovery endpoint not accessible on attempt $attempt: $oidc_config_url"
+            if [ $attempt -eq $max_attempts ]; then
+                print_error "External OIDC discovery endpoint validation failed"
+                print_info "Local discovery works but external access fails - likely network/firewall issue"
+                return 1
+            fi
+            sleep 15
+            attempt=$((attempt + 1))
+            continue
+        fi
+        print_success "✅ External OIDC discovery endpoint is accessible"
         
         # Test 5: Verify that external host configuration is reflected in OIDC config
         local oidc_response=$(curl -sf --connect-timeout 10 --max-time 30 "$oidc_config_url" 2>/dev/null)
@@ -736,21 +791,29 @@ trigger_keycloak_reconfiguration() {
         print_info "OIDC server is not ready for external connections"
         print_info "Troubleshooting steps:"
         print_info ""
-        print_info "1. Check if Keycloak is working locally:"
-        print_info "   curl -v http://localhost:8080/realms/master"
-        print_info "   (This should return HTTP 200 with JSON response)"
+        print_info "1. Test Keycloak discovery endpoint locally:"
+        print_info "   curl -v http://localhost:8080/realms/sso-hub/.well-known/openid_configuration"
+        print_info "   curl -v http://127.0.0.1:8080/realms/sso-hub/.well-known/openid_configuration"
+        print_info "   (Both should return HTTP 200 with JSON response)"
         print_info ""
-        print_info "2. If local works but external fails, check AWS Security Group:"
-        print_info "   • Go to EC2 Console → Security Groups"
-        print_info "   • Find your instance's security group"
-        print_info "   • Add Inbound Rule: Type: Custom TCP, Port: 8080, Source: 0.0.0.0/0"
-        print_info "   • Save rules and retry"
+        print_info "2. If localhost fails but 127.0.0.1 works - HSTS Issue:"
+        print_info "   • Clear browser HSTS policies: chrome://net-internals/#hsts"
+        print_info "   • Delete domain: localhost"  
+        print_info "   • Use 127.0.0.1 instead of localhost for testing"
         print_info ""
-        print_info "3. Test external connectivity:"
-        print_info "   curl -v http://${EXTERNAL_HOST}:8080/realms/master"
+        print_info "3. If both local endpoints fail - Container Issue:"
+        print_info "   • Check container: docker-compose ps keycloak"
+        print_info "   • Check logs: docker-compose logs keycloak"
+        print_info "   • Verify realm import: look for 'Realm sso-hub imported' in logs"
         print_info ""
-        print_info "4. Check container logs:"
-        print_info "   docker-compose logs keycloak"
+        print_info "4. If local works but external fails - Network Issue:"
+        print_info "   • Check AWS Security Group: Add port 8080 inbound rule"
+        print_info "   • Test external: curl -v http://${EXTERNAL_HOST}:8080/realms/master"
+        print_info ""
+        print_info "5. Keycloak 24.0 Hostname Configuration:"
+        print_info "   • Ensure KC_HOSTNAME is set correctly"
+        print_info "   • Check KC_HTTP_ENABLED=true"
+        print_info "   • Verify no HTTPS redirects in development mode"
         return 1
     fi
     
