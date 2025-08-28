@@ -407,7 +407,7 @@ update_env_config() {
         -e "s|^KC_HOSTNAME_URL=.*|KC_HOSTNAME_URL=$FULL_KEYCLOAK_URL|" \
         -e "s|^KC_HOSTNAME_ADMIN_URL=.*|KC_HOSTNAME_ADMIN_URL=$FULL_KEYCLOAK_URL|" \
         -e "s|^KEYCLOAK_PUBLIC_URL=.*|KEYCLOAK_PUBLIC_URL=$FULL_KEYCLOAK_URL/realms/sso-hub|" \
-        -e "s|^OIDC_ISSUER=.*|OIDC_ISSUER=http://keycloak:8080/realms/sso-hub|" \
+        -e "s|^OIDC_ISSUER=.*|OIDC_ISSUER=$FULL_KEYCLOAK_URL/realms/sso-hub|" \
         -e "s|^OIDC_REDIRECT_URI=.*|OIDC_REDIRECT_URI=$FULL_AUTH_BFF_URL/auth/callback|" \
         .env
         

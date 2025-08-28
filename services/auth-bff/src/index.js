@@ -44,48 +44,47 @@ async function initializeOIDC() {
     console.log('🔧 Initializing OIDC client...');
     console.log('🔗 OIDC Issuer URL:', config.OIDC_ISSUER);
     
-    // Manual OIDC issuer configuration (bypassing discovery endpoint)
-    const issuer = new Issuer({
-      issuer: config.OIDC_ISSUER,
-      authorization_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/auth`,
-      token_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/token`,
-      userinfo_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/userinfo`,
-      jwks_uri: `${config.OIDC_ISSUER}/protocol/openid-connect/certs`,
-      end_session_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/logout`,
-      introspection_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/token/introspect`,
-      revocation_endpoint: `${config.OIDC_ISSUER}/protocol/openid-connect/revoke`
-    });
-    console.log('✅ OIDC manual configuration successful');
-    console.log('🔍 Raw authorization endpoint:', issuer.authorization_endpoint);
-    console.log('🔍 Raw token endpoint:', issuer.token_endpoint);
+    // Environment-aware OIDC configuration 
+    // For external deployments: OIDC_ISSUER = external URL, but server endpoints need internal URLs
+    // For localhost deployments: Both issuer and endpoints use internal URLs
     
-    // SMART FIX: Create issuer with environment-aware endpoint correction
-    // Browser endpoints: Use public URL | Server endpoints: Use internal keycloak URL
+    const isExternalDeployment = config.OIDC_ISSUER !== 'http://keycloak:8080/realms/sso-hub';
     const publicUrl = config.OIDC_PUBLIC_URL.replace('/realms/sso-hub', '');
-    const internalUrl = config.OIDC_ISSUER.replace('/realms/sso-hub', '');
+    const internalBaseUrl = 'http://keycloak:8080';
     
-    console.log('🔧 Public URL (for browser):', publicUrl);
-    console.log('🔧 Internal URL (for server):', internalUrl);
+    console.log('🔧 External deployment detected:', isExternalDeployment);
+    console.log('🔧 OIDC Issuer (for token validation):', config.OIDC_ISSUER);
+    console.log('🔧 Public URL (for browser endpoints):', publicUrl);
+    console.log('🔧 Internal URL (for server endpoints):', internalBaseUrl);
     
-    const correctedIssuer = new Issuer({
-      issuer: issuer.issuer,
-      // Browser-facing endpoints use public URL
-      authorization_endpoint: issuer.authorization_endpoint.replace(internalUrl, publicUrl),
-      end_session_endpoint: issuer.end_session_endpoint?.replace(internalUrl, publicUrl),
-      // Server-side endpoints use internal URL for container communication  
-      token_endpoint: issuer.token_endpoint.replace(publicUrl, internalUrl),
-      userinfo_endpoint: issuer.userinfo_endpoint?.replace(publicUrl, internalUrl),
-      jwks_uri: issuer.jwks_uri?.replace(publicUrl, internalUrl),
-      introspection_endpoint: issuer.introspection_endpoint?.replace(publicUrl, internalUrl),
-      revocation_endpoint: issuer.revocation_endpoint?.replace(publicUrl, internalUrl)
+    const issuer = new Issuer({
+      // For token validation: Use the same issuer that Keycloak will return in tokens
+      // Since authorization_endpoint determines Keycloak's issuer, match it
+      issuer: isExternalDeployment ? config.OIDC_ISSUER : 'http://localhost:8080/realms/sso-hub',
+      
+      // Browser-facing endpoints: Use public URL for external, public URL for localhost too
+      authorization_endpoint: isExternalDeployment 
+        ? `${publicUrl}/realms/sso-hub/protocol/openid-connect/auth`
+        : `${publicUrl}/realms/sso-hub/protocol/openid-connect/auth`,
+      end_session_endpoint: isExternalDeployment
+        ? `${publicUrl}/realms/sso-hub/protocol/openid-connect/logout`
+        : `${publicUrl}/realms/sso-hub/protocol/openid-connect/logout`,
+        
+      // Server-side endpoints: Always use internal URLs for container communication
+      token_endpoint: `${internalBaseUrl}/realms/sso-hub/protocol/openid-connect/token`,
+      userinfo_endpoint: `${internalBaseUrl}/realms/sso-hub/protocol/openid-connect/userinfo`,
+      jwks_uri: `${internalBaseUrl}/realms/sso-hub/protocol/openid-connect/certs`,
+      introspection_endpoint: `${internalBaseUrl}/realms/sso-hub/protocol/openid-connect/token/introspect`,
+      revocation_endpoint: `${internalBaseUrl}/realms/sso-hub/protocol/openid-connect/revoke`
     });
+    console.log('✅ OIDC issuer configuration successful');
+    console.log('🔧 Issuer (for token validation):', issuer.issuer);
+    console.log('🔧 Authorization endpoint (browser):', issuer.authorization_endpoint);
+    console.log('🔧 Token endpoint (server):', issuer.token_endpoint);
+    console.log('🔧 Userinfo endpoint (server):', issuer.userinfo_endpoint);
+    console.log('🔧 JWKS URI (server):', issuer.jwks_uri);
     
-    console.log('🔧 Corrected authorization endpoint (browser):', correctedIssuer.authorization_endpoint);
-    console.log('🔧 Corrected token endpoint (server):', correctedIssuer.token_endpoint);
-    console.log('🔧 Corrected userinfo endpoint (server):', correctedIssuer.userinfo_endpoint);
-    console.log('🔧 Corrected JWKS URI (server):', correctedIssuer.jwks_uri);
-    
-    oidcClient = new correctedIssuer.Client({
+    oidcClient = new issuer.Client({
       client_id: config.OIDC_CLIENT_ID,
       client_secret: config.OIDC_CLIENT_SECRET,
       redirect_uris: [config.OIDC_REDIRECT_URI],
