@@ -479,36 +479,48 @@ validate_oidc_configuration() {
     while [ $attempt -le $max_attempts ]; do
         print_info "Validation attempt $attempt/$max_attempts..."
         
-        # Test 1: Check if Keycloak admin console is accessible externally
-        local external_admin_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/admin/"
-        if ! curl -sf --connect-timeout 10 --max-time 30 "$external_admin_url" &>/dev/null; then
-            print_warning "External Keycloak admin console not accessible on attempt $attempt"
+        # Test 1: Verify Keycloak is accessible locally first (from host system)
+        print_info "Step 1: Testing local Keycloak accessibility..."
+        if ! curl -sf --connect-timeout 5 --max-time 10 "http://localhost:8080/realms/master" &>/dev/null; then
+            print_warning "Local Keycloak not accessible on attempt $attempt (container may not be ready)"
             if [ $attempt -eq $max_attempts ]; then
-                print_error "External Keycloak admin console validation failed"
+                print_error "Local Keycloak validation failed - container not responding"
+                print_info "This suggests Keycloak container is not fully ready for external access"
                 return 1
             fi
             sleep 15
             attempt=$((attempt + 1))
             continue
         fi
+        print_success "✅ Local Keycloak is responding"
         
-        # Test 2: Check if master realm is accessible externally
+        # Test 2: Check external network accessibility
+        print_info "Step 2: Testing external network accessibility..."
         local external_master_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/master"
         if ! curl -sf --connect-timeout 10 --max-time 30 "$external_master_url" &>/dev/null; then
             print_warning "External master realm not accessible on attempt $attempt"
+            print_warning "URL tested: $external_master_url"
             if [ $attempt -eq $max_attempts ]; then
-                print_error "External master realm validation failed"
+                print_error "External network accessibility validation failed"
+                print_error "Common causes:"
+                print_error "  • AWS Security Group doesn't allow port 8080 inbound traffic"
+                print_error "  • Firewall blocking port 8080"
+                print_error "  • Network routing issues"
+                print_info "Try: curl -v http://localhost:8080/realms/master (should work)"
+                print_info "Try: curl -v $external_master_url (currently failing)"
                 return 1
             fi
             sleep 15
             attempt=$((attempt + 1))
             continue
         fi
+        print_success "✅ External network access is working"
         
         # Test 3: Check if sso-hub realm is accessible externally
+        print_info "Step 3: Testing sso-hub realm accessibility..."
         local external_realm_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/sso-hub"
         if ! curl -sf --connect-timeout 10 --max-time 30 "$external_realm_url" &>/dev/null; then
-            print_warning "External SSO-Hub realm not accessible on attempt $attempt"
+            print_warning "External SSO-Hub realm not accessible on attempt $attempt: $external_realm_url"
             if [ $attempt -eq $max_attempts ]; then
                 print_error "External SSO-Hub realm validation failed"
                 return 1
@@ -517,20 +529,23 @@ validate_oidc_configuration() {
             attempt=$((attempt + 1))
             continue
         fi
+        print_success "✅ SSO-Hub realm is accessible externally"
         
-        # Test 4: Check if sso-hub realm OpenID configuration is accessible externally
+        # Test 4: Check if OIDC discovery endpoint is accessible
+        print_info "Step 4: Testing OIDC discovery endpoint..."
         local oidc_config_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/sso-hub/.well-known/openid_configuration"
-        print_info "Testing OIDC discovery endpoint: $oidc_config_url"
+        print_info "Testing: $oidc_config_url"
         if ! curl -sf --connect-timeout 10 --max-time 30 "$oidc_config_url" &>/dev/null; then
-            print_warning "OIDC configuration endpoint not accessible on attempt $attempt: $oidc_config_url"
+            print_warning "OIDC discovery endpoint not accessible on attempt $attempt: $oidc_config_url"
             if [ $attempt -eq $max_attempts ]; then
-                print_error "OIDC configuration endpoint validation failed"
+                print_error "OIDC discovery endpoint validation failed"
                 return 1
             fi
             sleep 15
             attempt=$((attempt + 1))
             continue
         fi
+        print_success "✅ OIDC discovery endpoint is accessible"
         
         # Test 5: Verify that external host configuration is reflected in OIDC config
         local oidc_response=$(curl -sf --connect-timeout 10 --max-time 30 "$oidc_config_url" 2>/dev/null)
@@ -719,11 +734,23 @@ trigger_keycloak_reconfiguration() {
         print_error "❌ OIDC configuration validation failed"
         print_error "Deployment stopped at Stage 3"
         print_info "OIDC server is not ready for external connections"
-        print_info "Common issues:"
-        print_info "  • SSL requirements not properly configured"
-        print_info "  • Realm configuration incorrect"
-        print_info "  • Client redirect URIs not updated"
-        print_info "  • Check Keycloak logs: docker-compose logs keycloak"
+        print_info "Troubleshooting steps:"
+        print_info ""
+        print_info "1. Check if Keycloak is working locally:"
+        print_info "   curl -v http://localhost:8080/realms/master"
+        print_info "   (This should return HTTP 200 with JSON response)"
+        print_info ""
+        print_info "2. If local works but external fails, check AWS Security Group:"
+        print_info "   • Go to EC2 Console → Security Groups"
+        print_info "   • Find your instance's security group"
+        print_info "   • Add Inbound Rule: Type: Custom TCP, Port: 8080, Source: 0.0.0.0/0"
+        print_info "   • Save rules and retry"
+        print_info ""
+        print_info "3. Test external connectivity:"
+        print_info "   curl -v http://${EXTERNAL_HOST}:8080/realms/master"
+        print_info ""
+        print_info "4. Check container logs:"
+        print_info "   docker-compose logs keycloak"
         return 1
     fi
     
