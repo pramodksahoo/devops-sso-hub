@@ -415,6 +415,30 @@ update_env_config() {
     rm .env.tmp
     
     print_success "Environment configuration updated"
+    
+    # Restart Keycloak to apply new hostname configuration
+    print_step "Restarting Keycloak to apply hostname changes..."
+    docker-compose restart keycloak
+    
+    # Wait for Keycloak to be ready
+    print_info "Waiting for Keycloak to restart (30 seconds)..."
+    sleep 30
+    
+    # Verify Keycloak is accessible
+    local retries=0
+    local max_retries=12
+    while [ $retries -lt $max_retries ]; do
+        if curl -sf http://localhost:8080/realms/master >/dev/null 2>&1; then
+            print_success "Keycloak restarted successfully"
+            break
+        fi
+        retries=$((retries + 1))
+        if [ $retries -eq $max_retries ]; then
+            print_error "Keycloak failed to restart properly"
+            return 1
+        fi
+        sleep 5
+    done
 }
 
 # Generate SSL certificates (Let's Encrypt only)

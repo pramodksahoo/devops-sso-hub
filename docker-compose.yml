@@ -107,7 +107,7 @@ services:
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-sso-hub}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-sso-hub-client}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-sso-client-secret}
-    command: start --optimized --hostname=localhost --hostname-strict=false --import-realm
+    command: start --optimized --hostname-strict=false --import-realm
     ports:
       - "8080:8080"
       - "9000:9000"  # Management port for health checks

@@ -335,10 +335,13 @@ update_client_configuration() {
     
     print_info "Found client internal ID: ${client_internal_id}"
     
-    # Update client with both external and localhost URIs
+    # Update client with both external and localhost URIs plus base URLs
     if /opt/keycloak/bin/kcadm.sh update clients/${client_internal_id} -r "${REALM_NAME}" \
         -s "redirectUris=[\"${auth_callback_uri}\",\"${frontend_uri}\",\"${localhost_callback}\",\"${localhost_frontend}\"]" \
-        -s "webOrigins=[\"${frontend_uri}\",\"${auth_callback_uri}\",\"${localhost_frontend}\",\"http://localhost:3002\"]"; then
+        -s "webOrigins=[\"${frontend_uri}\",\"${auth_callback_uri}\",\"${localhost_frontend}\",\"http://localhost:3002\"]" \
+        -s "rootUrl=\"${frontend_uri}\"" \
+        -s "baseUrl=\"${frontend_uri}\"" \
+        -s "adminUrl=\"${frontend_uri}\""; then
         
         print_success "Client configuration updated for external access"
         print_info "Updated redirect URIs:"
