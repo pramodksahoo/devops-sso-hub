@@ -435,15 +435,15 @@ restart_containers_for_external_config() {
     print_step "Restarting containers to apply external configuration..."
     
     # Only restart containers that need environment variable updates
-    print_info "Restarting auth-bff and nginx with new environment variables..."
+    print_info "Recreating auth-bff and nginx with new environment variables..."
     
-    # Restart auth-bff to pick up new KEYCLOAK_PUBLIC_URL
-    docker-compose restart auth-bff
-    sleep 5
+    # Force recreate auth-bff to pick up new OIDC_ISSUER and KEYCLOAK_PUBLIC_URL
+    docker-compose up -d auth-bff --force-recreate
+    sleep 10
     
-    # Restart nginx to pick up new KEYCLOAK_PUBLIC_URL in templates
-    docker-compose restart nginx 
-    sleep 5
+    # Force recreate nginx to pick up new KEYCLOAK_PUBLIC_URL in templates
+    docker-compose up -d nginx --force-recreate
+    sleep 10
     
     # Verify containers are healthy
     local services_restarted=0
