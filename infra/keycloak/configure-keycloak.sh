@@ -217,6 +217,13 @@ configure_ssl_requirements() {
         return 1
     fi
     
+    # Re-authenticate before accessing application realm (avoid 401 errors)
+    print_info "Re-authenticating for ${REALM_NAME} realm access..."
+    if ! /opt/keycloak/bin/kcadm.sh config credentials --server "${KC_INTERNAL_URL}" --realm master --user "${KC_ADMIN_USER}" --password "${KC_ADMIN_PASS}"; then
+        print_error "Re-authentication failed"
+        return 1
+    fi
+    
     # Configure SSL for application realm
     print_info "Configuring SSL for ${REALM_NAME} realm..."
     if /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=${ssl_mode}; then
@@ -265,6 +272,13 @@ configure_hostname_settings() {
     print_info "  Frontend URL: ${external_keycloak_url}"
     print_info "  Admin Console URL: ${external_admin_url}"
     
+    # Re-authenticate before updating realm frontend URL
+    print_info "Re-authenticating for realm frontend URL update..."
+    if ! /opt/keycloak/bin/kcadm.sh config credentials --server "${KC_INTERNAL_URL}" --realm master --user "${KC_ADMIN_USER}" --password "${KC_ADMIN_PASS}"; then
+        print_error "Re-authentication failed"
+        return 1
+    fi
+    
     # Update realm frontend URL for the sso-hub realm
     print_info "Updating ${REALM_NAME} realm frontend URL..."
     if /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} \
@@ -307,6 +321,13 @@ configure_hostname_settings() {
 # Update client configuration for external access
 update_client_configuration() {
     print_info "Updating client configuration for external access..."
+    
+    # Re-authenticate for client configuration access
+    print_info "Re-authenticating for client configuration..."
+    if ! /opt/keycloak/bin/kcadm.sh config credentials --server "${KC_INTERNAL_URL}" --realm master --user "${KC_ADMIN_USER}" --password "${KC_ADMIN_PASS}"; then
+        print_error "Re-authentication failed for client configuration"
+        return 1
+    fi
     
     # Calculate URLs based on environment
     local auth_callback_uri="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:${AUTH_BFF_PORT}/auth/callback"
