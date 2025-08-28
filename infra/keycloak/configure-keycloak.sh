@@ -6,6 +6,24 @@
 
 set -e
 
+# Load current environment variables (including any updates)
+load_current_environment() {
+    # Try to source updated environment variables from the .env file if it exists
+    if [ -f "/.env" ]; then
+        echo "[KEYCLOAK-CONFIG] Loading environment from /.env (container)"
+        source /.env 2>/dev/null || true
+    elif [ -f "/app/.env" ]; then
+        echo "[KEYCLOAK-CONFIG] Loading environment from /app/.env"
+        source /app/.env 2>/dev/null || true
+    fi
+    
+    # Also check for any environment file in working directory
+    if [ -f ".env" ]; then
+        echo "[KEYCLOAK-CONFIG] Loading environment from .env (working directory)"
+        source .env 2>/dev/null || true
+    fi
+}
+
 # Environment variables with defaults
 KC_ADMIN_USER=${KEYCLOAK_ADMIN:-admin}
 KC_ADMIN_PASS=${KEYCLOAK_ADMIN_PASSWORD:-admin_password}
@@ -45,6 +63,20 @@ print_error() {
 
 print_warning() {
     echo -e "${YELLOW}[KEYCLOAK-CONFIG]${NC} $1"
+}
+
+# Now load current environment with proper logging
+load_current_environment
+
+# Show current configuration for debugging
+show_current_config() {
+    print_info "Current Keycloak configuration:"
+    print_info "  EXTERNAL_HOST: ${EXTERNAL_HOST}"
+    print_info "  EXTERNAL_PROTOCOL: ${EXTERNAL_PROTOCOL}"
+    print_info "  AUTH_BFF_PORT: ${AUTH_BFF_PORT}"
+    print_info "  FRONTEND_PORT: ${FRONTEND_PORT}"
+    print_info "  REALM_NAME: ${REALM_NAME}"
+    print_info "  CLIENT_ID: ${CLIENT_ID}"
 }
 
 # Find working Keycloak URL (internal container connectivity)
@@ -151,19 +183,37 @@ update_client_configuration() {
     print_info "  - External: ${auth_callback_uri}, ${frontend_uri}"
     print_info "  - Local: ${localhost_callback}, ${localhost_frontend}"
     
+    # Get client internal ID first
+    local client_internal_id=$(/opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields id,clientId | jq -r ".[] | select(.clientId==\"${CLIENT_ID}\") | .id" 2>/dev/null)
+    
+    if [ -z "$client_internal_id" ]; then
+        print_error "Could not find client ${CLIENT_ID} in realm ${REALM_NAME}"
+        print_info "Available clients:"
+        /opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields clientId 2>/dev/null | jq -r '.[].clientId' || echo "Could not list clients"
+        return 1
+    fi
+    
+    print_info "Found client internal ID: ${client_internal_id}"
+    
     # Update client with both external and localhost URIs
-    if /opt/keycloak/bin/kcadm.sh update clients/${CLIENT_ID} -r "${REALM_NAME}" \
+    if /opt/keycloak/bin/kcadm.sh update clients/${client_internal_id} -r "${REALM_NAME}" \
         -s "redirectUris=[\"${auth_callback_uri}\",\"${frontend_uri}\",\"${localhost_callback}\",\"${localhost_frontend}\"]" \
         -s "webOrigins=[\"${frontend_uri}\",\"${auth_callback_uri}\",\"${localhost_frontend}\",\"http://localhost:3002\"]"; then
         
         print_success "Client configuration updated for external access"
+        print_info "Updated redirect URIs:"
+        print_info "  - ${auth_callback_uri}"
+        print_info "  - ${frontend_uri}"
+        print_info "  - ${localhost_callback}"
+        print_info "  - ${localhost_frontend}"
     else
-        print_warning "Could not update client configuration"
+        print_error "Could not update client configuration"
+        return 1
     fi
     
     # Update client secret if provided and different from default
     if [ -n "${CLIENT_SECRET}" ] && [ "${CLIENT_SECRET}" != "sso-client-secret" ]; then
-        if /opt/keycloak/bin/kcadm.sh update clients/${CLIENT_ID} -r "${REALM_NAME}" -s "secret=${CLIENT_SECRET}"; then
+        if /opt/keycloak/bin/kcadm.sh update clients/${client_internal_id} -r "${REALM_NAME}" -s "secret=${CLIENT_SECRET}"; then
             print_success "Client secret updated"
         else
             print_warning "Could not update client secret"
@@ -213,6 +263,10 @@ show_diagnostic_info() {
 # Main execution
 main() {
     print_info "Starting Keycloak configuration for external access..."
+    
+    # Show current configuration for debugging
+    show_current_config
+    
     print_info "External Target: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}"
     print_info "Running inside Keycloak container - using internal connectivity"
     

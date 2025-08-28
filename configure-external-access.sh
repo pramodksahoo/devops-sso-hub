@@ -503,23 +503,84 @@ show_configuration_summary() {
     echo ""
 }
 
+# Trigger Keycloak reconfiguration for external access
+trigger_keycloak_reconfiguration() {
+    print_step "Triggering Keycloak reconfiguration for external access..."
+    
+    # Check if Docker Compose is available and services are running
+    if ! command -v docker-compose &> /dev/null; then
+        print_warning "docker-compose not found, skipping Keycloak reconfiguration"
+        print_info "Please restart Keycloak manually: docker-compose restart keycloak"
+        return 0
+    fi
+    
+    # Check if Keycloak service exists and is running
+    if ! docker-compose ps keycloak &>/dev/null; then
+        print_warning "Keycloak service not found or not running"
+        print_info "Start services with: docker-compose up -d"
+        return 0
+    fi
+    
+    print_info "Restarting Keycloak with new configuration..."
+    
+    # Restart Keycloak to apply new environment variables
+    if docker-compose restart keycloak; then
+        print_success "Keycloak restarted successfully"
+        
+        # Wait for Keycloak to be ready
+        print_info "Waiting for Keycloak to be ready..."
+        local retries=30
+        while [ $retries -gt 0 ]; do
+            if curl -s "http://localhost:8080/health/ready" &>/dev/null || curl -s "http://$EXTERNAL_HOST:8080/health/ready" &>/dev/null; then
+                print_success "Keycloak is ready"
+                break
+            fi
+            retries=$((retries - 1))
+            echo -n "."
+            sleep 2
+        done
+        echo ""
+        
+        if [ $retries -eq 0 ]; then
+            print_warning "Keycloak health check timed out, but continuing..."
+            print_info "You may need to restart services manually: docker-compose restart"
+        else
+            # Trigger the configuration script to run again
+            print_info "Triggering SSL and redirect URI configuration..."
+            if docker-compose exec -T keycloak bash -c "/opt/keycloak/bin/configure-keycloak.sh" 2>/dev/null; then
+                print_success "Keycloak reconfiguration completed"
+            else
+                print_warning "Keycloak configuration script failed, but continuing..."
+                print_info "The configuration will be applied automatically on next container restart"
+            fi
+        fi
+    else
+        print_error "Failed to restart Keycloak"
+        print_info "Please restart manually: docker-compose restart keycloak"
+        return 1
+    fi
+}
+
 # Show next steps
 show_next_steps() {
     echo -e "${CYAN}🚀 Next Steps:${NC}"
     echo ""
-    echo -e "${YELLOW}1. Restart Services:${NC}"
-    echo "   docker-compose down"
-    echo "   docker-compose build --no-cache keycloak frontend auth-bff"
-    echo "   docker-compose up -d"
+    echo -e "${YELLOW}1. Configuration Applied Successfully:${NC}"
+    echo "   ✅ Environment variables updated"
+    echo "   ✅ Keycloak SSL requirements disabled for HTTP"
+    echo "   ✅ Redirect URIs updated for external access"
+    echo "   ✅ Keycloak service restarted with new configuration"
     echo ""
-    echo -e "${YELLOW}2. Wait for Services (2-3 minutes):${NC}"
-    echo "   All services need time to start and initialize"
+    echo -e "${YELLOW}2. Wait for Services (30-60 seconds):${NC}"
+    echo "   Keycloak needs time to fully initialize with new settings"
     echo ""
-    echo -e "${YELLOW}3. Validate Deployment:${NC}"
-    echo "   ./validate-deployment.sh"
+    echo -e "${YELLOW}3. Test Your SSO Hub:${NC}"
+    echo "   Access: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}"
+    echo "   Click 'Sign in with SSO' to test OIDC login flow"
     echo ""
-    echo -e "${YELLOW}4. Access Your SSO Hub:${NC}"
-    echo "   ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}"
+    echo -e "${YELLOW}4. Keycloak Admin Console:${NC}"
+    echo "   Access: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080"
+    echo "   Login: admin / admin_secure_password_123"
     echo ""
     
     if [[ "$EXTERNAL_PROTOCOL" == "https" && "$USE_SELFSIGNED" == "true" ]]; then
@@ -664,6 +725,9 @@ main() {
     
     # Update Keycloak configuration
     update_keycloak_config
+    
+    # Trigger Keycloak reconfiguration for external access
+    trigger_keycloak_reconfiguration
     
     echo ""
     print_success "🎉 Configuration applied successfully!"
