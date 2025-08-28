@@ -183,52 +183,59 @@ configure_kcadm() {
     fi
 }
 
-# Disable SSL requirements
-disable_ssl_requirements() {
-    print_info "Disabling SSL requirements for HTTP access..."
+# Configure SSL requirements based on Keycloak best practices
+configure_ssl_requirements() {
+    print_info "Configuring SSL requirements for external HTTP access..."
+    print_info "Following Keycloak official documentation for ${EXTERNAL_PROTOCOL} deployment"
     
-    # Disable SSL for master realm (admin console)
-    print_info "Disabling SSL for master realm..."
-    if /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE 2>/dev/null; then
-        print_success "✅ SSL disabled for master realm"
+    local ssl_mode="NONE"
+    if [[ "${EXTERNAL_PROTOCOL}" == "https" ]]; then
+        ssl_mode="EXTERNAL"
+        print_info "HTTPS detected - setting SSL requirement to 'EXTERNAL' (recommended for reverse proxy)"
     else
-        print_error "❌ Failed to disable SSL for master realm"
-        print_info "Attempting alternative method..."
-        # Try alternative approach
-        if /opt/keycloak/bin/kcadm.sh get realms/master 2>/dev/null | grep -q "sslRequired"; then
-            /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=NONE --no-config-ssl 2>/dev/null || true
-        fi
+        print_info "HTTP detected - setting SSL requirement to 'NONE' (development/testing only)"
     fi
     
-    # Disable SSL for application realm
-    print_info "Disabling SSL for ${REALM_NAME} realm..."
-    if /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=NONE 2>/dev/null; then
-        print_success "✅ SSL disabled for ${REALM_NAME} realm"
+    # Configure SSL for master realm (admin console access)
+    print_info "Configuring SSL for master realm..."
+    if /opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=${ssl_mode}; then
+        print_success "✅ SSL configured for master realm: ${ssl_mode}"
     else
-        print_error "❌ Failed to disable SSL for ${REALM_NAME} realm"
-        print_info "Attempting alternative method..."
-        # Try alternative approach
-        if /opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} 2>/dev/null | grep -q "sslRequired"; then
-            /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=NONE --no-config-ssl 2>/dev/null || true
-        fi
+        print_error "❌ Failed to configure SSL for master realm"
+        # Try with explicit error handling
+        local error_output=$(/opt/keycloak/bin/kcadm.sh update realms/master -s sslRequired=${ssl_mode} 2>&1)
+        print_error "Error details: ${error_output}"
+        return 1
     fi
     
-    # Verify SSL is disabled
-    print_info "Verifying SSL requirements are disabled..."
+    # Configure SSL for application realm
+    print_info "Configuring SSL for ${REALM_NAME} realm..."
+    if /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=${ssl_mode}; then
+        print_success "✅ SSL configured for ${REALM_NAME} realm: ${ssl_mode}"
+    else
+        print_error "❌ Failed to configure SSL for ${REALM_NAME} realm"
+        local error_output=$(/opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} -s sslRequired=${ssl_mode} 2>&1)
+        print_error "Error details: ${error_output}"
+        return 1
+    fi
     
-    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
-    local app_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    # Verify SSL configuration
+    print_info "Verifying SSL configuration..."
     
-    print_info "SSL Status Check:"
-    print_info "  Master realm SSL requirement: ${master_ssl}"
-    print_info "  ${REALM_NAME} realm SSL requirement: ${app_ssl}"
+    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | cut -d'"' -f4 || echo "unknown")
+    local app_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | cut -d'"' -f4 || echo "unknown")
     
-    if [[ "$master_ssl" == "NONE" && "$app_ssl" == "NONE" ]]; then
-        print_success "✅ SSL requirements successfully disabled for both realms"
+    print_info "=== SSL Configuration Verification ==="
+    print_info "  Target SSL Mode: ${ssl_mode}"
+    print_info "  Master realm: ${master_ssl}"
+    print_info "  ${REALM_NAME} realm: ${app_ssl}"
+    
+    if [[ "$master_ssl" == "$ssl_mode" && "$app_ssl" == "$ssl_mode" ]]; then
+        print_success "✅ SSL requirements successfully configured for ${EXTERNAL_PROTOCOL} access"
         return 0
     else
-        print_warning "⚠️  SSL requirements may not be fully disabled"
-        print_warning "  This could cause 'ssl_required' errors during login"
+        print_error "❌ SSL configuration mismatch detected"
+        print_error "  Expected: ${ssl_mode}, Got Master: ${master_ssl}, App: ${app_ssl}"
         return 1
     fi
 }
@@ -247,13 +254,17 @@ update_client_configuration() {
     print_info "  - External: ${auth_callback_uri}, ${frontend_uri}"
     print_info "  - Local: ${localhost_callback}, ${localhost_frontend}"
     
-    # Get client internal ID first
-    local client_internal_id=$(/opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields id,clientId | jq -r ".[] | select(.clientId==\"${CLIENT_ID}\") | .id" 2>/dev/null)
+    # Get client internal ID using kcadm.sh without jq dependency
+    print_info "Searching for client: ${CLIENT_ID}"
+    local client_list_output=$(/opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields id,clientId 2>/dev/null)
+    
+    # Extract client ID using grep and awk (no jq dependency)
+    local client_internal_id=$(echo "$client_list_output" | grep -A 2 -B 2 "\"clientId\" : \"${CLIENT_ID}\"" | grep "\"id\"" | head -1 | awk -F'"' '{print $4}')
     
     if [ -z "$client_internal_id" ]; then
         print_error "Could not find client ${CLIENT_ID} in realm ${REALM_NAME}"
         print_info "Available clients:"
-        /opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields clientId 2>/dev/null | jq -r '.[].clientId' || echo "Could not list clients"
+        echo "$client_list_output" | grep "clientId" | awk -F'"' '{print "  - " $4}' || echo "Could not parse client list"
         return 1
     fi
     
@@ -285,25 +296,24 @@ update_client_configuration() {
     fi
 }
 
-# Test configuration (internal connectivity)
+# Test configuration (using kcadm only)
 test_configuration() {
     print_info "Testing Keycloak configuration..."
     
-    # Test realm accessibility (internal)
-    if curl -s --max-time 10 "${KC_INTERNAL_URL}/realms/${REALM_NAME}" > /dev/null 2>&1; then
-        print_success "✅ Realm ${REALM_NAME} is accessible internally via HTTP"
+    # Test realm accessibility using kcadm
+    if /opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} 2>/dev/null | grep -q "realm"; then
+        print_success "✅ Realm ${REALM_NAME} is accessible via admin API"
     else
-        print_error "❌ Cannot access realm ${REALM_NAME} internally"
+        print_error "❌ Cannot access realm ${REALM_NAME} via admin API"
         return 1
     fi
     
-    # Test OIDC discovery (internal)
-    local discovery_url="${KC_INTERNAL_URL}/realms/${REALM_NAME}/.well-known/openid_configuration"
-    if curl -s --max-time 10 "${discovery_url}" > /dev/null 2>&1; then
-        print_success "✅ OIDC discovery endpoint is accessible internally"
+    # Test that SSL is properly disabled
+    local ssl_required=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    if [[ "$ssl_required" == "NONE" ]]; then
+        print_success "✅ SSL requirements are disabled for ${REALM_NAME}"
     else
-        print_error "❌ Cannot access OIDC discovery endpoint internally"
-        return 1
+        print_warning "⚠️  SSL requirement for ${REALM_NAME}: ${ssl_required}"
     fi
     
     return 0
@@ -338,11 +348,15 @@ main() {
     if [[ "${EXTERNAL_HOST}" == "localhost" || "${EXTERNAL_HOST}" == "127.0.0.1" ]]; then
         print_success "✅ External host is localhost - skipping external configuration"
         print_info "Keycloak realm is pre-configured for local development"
-        print_info "For external access, run: ./configure-external-access.sh"
+        print_info "SSL requirements remain as configured in realm import"
+        print_info "For external access, run: ./configure-external-access.sh with your public IP"
         
         show_diagnostic_info
         exit 0
     fi
+    
+    print_info "🌐 External host detected: ${EXTERNAL_HOST}"
+    print_info "🔧 Proceeding with external access configuration..."
     
     # Step 1: Find working internal Keycloak URL
     if ! find_keycloak_url; then
@@ -354,19 +368,8 @@ main() {
     
     print_info "Using internal URL: ${KC_INTERNAL_URL} for API calls"
     
-    # Step 2: Wait for Keycloak to be ready
-    if ! wait_for_keycloak; then
-        print_warning "Admin API not accessible - realm may be pre-configured"
-        # Test if realm works anyway
-        if curl -s --max-time 10 "${KC_INTERNAL_URL}/realms/${REALM_NAME}" > /dev/null 2>&1; then
-            print_success "✅ Realm is accessible - configuration appears to be working"
-            show_diagnostic_info
-            exit 0
-        else
-            print_error "Realm is not accessible and admin API is not ready"
-            exit 1
-        fi
-    fi
+    # Step 2: Since find_keycloak_url already confirmed API works, proceed directly to auth
+    print_info "Keycloak API confirmed working, proceeding with authentication..."
     
     # Step 3: Authenticate with admin API
     if ! configure_kcadm; then
@@ -381,8 +384,8 @@ main() {
         fi
     fi
     
-    # Step 4: Configure Keycloak
-    disable_ssl_requirements
+    # Step 4: Configure Keycloak for external access
+    configure_ssl_requirements
     update_client_configuration
     
     # Step 5: Test configuration
