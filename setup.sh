@@ -222,8 +222,12 @@ configure_environment() {
             print_info "  • Domain name access (HTTP or HTTPS with Let's Encrypt)"
             echo ""
             if [ -x "./configure-external-access.sh" ]; then
+                # Run external access configuration (this includes full deployment)
                 ./configure-external-access.sh
                 print_success "External access configured successfully"
+                # Skip the rest of setup.sh since configure-external-access.sh handles deployment
+                print_info "External configuration completed - setup process finished"
+                exit 0
             else
                 print_warning "configure-external-access.sh not found or not executable"
                 print_info "Using default localhost configuration"

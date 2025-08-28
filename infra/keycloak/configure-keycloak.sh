@@ -243,6 +243,56 @@ configure_ssl_requirements() {
     fi
 }
 
+# Configure Keycloak hostname settings for external access
+configure_hostname_settings() {
+    print_info "Configuring Keycloak hostname settings for external access..."
+    
+    local external_keycloak_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080"
+    local external_admin_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080"
+    
+    print_info "Setting external URLs:"
+    print_info "  Frontend URL: ${external_keycloak_url}"
+    print_info "  Admin Console URL: ${external_admin_url}"
+    
+    # Update realm frontend URL for the sso-hub realm
+    print_info "Updating ${REALM_NAME} realm frontend URL..."
+    if /opt/keycloak/bin/kcadm.sh update realms/${REALM_NAME} \
+        -s "attributes.frontendUrl=${external_keycloak_url}"; then
+        print_success "✅ Realm frontend URL configured: ${external_keycloak_url}"
+    else
+        print_error "❌ Failed to update realm frontend URL"
+        return 1
+    fi
+    
+    # Update master realm frontend URL for admin console
+    print_info "Updating master realm frontend URL for admin console..."
+    if /opt/keycloak/bin/kcadm.sh update realms/master \
+        -s "attributes.frontendUrl=${external_admin_url}"; then
+        print_success "✅ Master realm frontend URL configured: ${external_admin_url}"
+    else
+        print_error "❌ Failed to update master realm frontend URL"
+        return 1
+    fi
+    
+    # Verify hostname configuration
+    print_info "Verifying hostname configuration..."
+    local realm_frontend=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields attributes 2>/dev/null | grep "frontendUrl" | sed 's/.*"frontendUrl" : "\([^"]*\)".*/\1/' || echo "not-set")
+    local master_frontend=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields attributes 2>/dev/null | grep "frontendUrl" | sed 's/.*"frontendUrl" : "\([^"]*\)".*/\1/' || echo "not-set")
+    
+    print_info "=== Hostname Configuration Verification ==="
+    print_info "  Target URL: ${external_keycloak_url}"
+    print_info "  ${REALM_NAME} realm frontend URL: ${realm_frontend}"
+    print_info "  Master realm frontend URL: ${master_frontend}"
+    
+    if [[ "$realm_frontend" == "$external_keycloak_url" ]] && [[ "$master_frontend" == "$external_admin_url" ]]; then
+        print_success "✅ Hostname settings successfully configured for external access"
+        return 0
+    else
+        print_error "❌ Hostname configuration verification failed"
+        return 1
+    fi
+}
+
 # Update client configuration for external access
 update_client_configuration() {
     print_info "Updating client configuration for external access..."
@@ -613,6 +663,12 @@ main() {
         print_success "SSL configuration completed successfully"
     else
         print_warning "SSL configuration completed with warnings, continuing..."
+    fi
+    
+    if configure_hostname_settings; then
+        print_success "Hostname configuration completed successfully"
+    else
+        print_warning "Hostname configuration completed with warnings, continuing..."
     fi
     
     if update_client_configuration; then
