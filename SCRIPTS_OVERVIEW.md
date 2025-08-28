@@ -16,8 +16,7 @@ This document explains all the scripts available in SSO Hub and their purposes.
 
 | Script | Purpose | When to Use |
 |--------|---------|-------------|
-| `./generate-ssl-certs.sh` | **Self-signed SSL certificates** - Works with IP addresses | HTTPS with self-signed certs |
-| `./letsencrypt-setup.sh` | **Let's Encrypt SSL certificates** - Production-ready SSL | HTTPS with valid certificates (domains only) |
+| `./ssl-setup.sh` | **Let's Encrypt SSL certificates** - Production-ready SSL for domains only | HTTPS with valid certificates (domains only) |
 
 ### **Utility Scripts**
 
@@ -69,13 +68,13 @@ This document explains all the scripts available in SSO Hub and their purposes.
 ### **SSL Certificate Management**
 ```bash
 # For self-signed certificates (IP addresses)
-./generate-ssl-certs.sh
+./ssl-setup.sh
 
 # For Let's Encrypt certificates (domain names)
-./letsencrypt-setup.sh
+./ssl-setup.sh
 
 # Certificate renewal (automatic)
-./renew-ssl-certs.sh  # Created by letsencrypt-setup.sh
+./renew-ssl-certs.sh  # Created by ssl-setup.sh
 ```
 
 ### **Troubleshooting**
@@ -97,8 +96,7 @@ All scripts have been validated for syntax errors:
 - ✅ `setup.sh` - Syntax OK
 - ✅ `configure-external-access.sh` - Syntax OK  
 - ✅ `validate-deployment.sh` - Syntax OK
-- ✅ `generate-ssl-certs.sh` - Syntax OK
-- ✅ `letsencrypt-setup.sh` - Syntax OK
+- ✅ `ssl-setup.sh` - Syntax OK
 - ✅ `cleanup.sh` - Syntax OK
 - ✅ All `infra/keycloak/*.sh` scripts - Syntax OK
 - ✅ All `infra/nginx/*.sh` scripts - Syntax OK

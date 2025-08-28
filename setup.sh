@@ -209,14 +209,18 @@ configure_environment() {
         print_info "Configuring access method..."
         echo ""
         echo "How will you access SSO Hub?"
-        echo "1) Localhost only (development)"
-        echo "2) External access (IP address or domain name)"
+        echo "1) Localhost only (development/testing)"
+        echo "2) External access (public IP or domain name)"
         echo ""
         read -p "Select option (1-2): " -n 1 -r access_choice
         echo ""
         
         if [[ $access_choice == "2" ]]; then
             print_info "Configuring external access..."
+            print_info "This will help you set up either:"
+            print_info "  • Public IP access (HTTP only - good for AWS EC2)"
+            print_info "  • Domain name access (HTTP or HTTPS with Let's Encrypt)"
+            echo ""
             if [ -x "./configure-external-access.sh" ]; then
                 ./configure-external-access.sh
                 print_success "External access configured successfully"
@@ -230,6 +234,8 @@ configure_environment() {
     else
         print_info "Using default localhost configuration for auto mode"
         print_info "Run './configure-external-access.sh' later for external access"
+        print_info "  • Public IP: HTTP only (good for AWS EC2)"
+        print_info "  • Domain: HTTP or HTTPS (production ready)"
     fi
     
     # Auto-update URLs if external configuration is detected
@@ -296,8 +302,11 @@ validate_env_syntax() {
     
     if $fixed_any; then
         print_success "Environment file syntax validation completed with fixes"
+        print_info "Original files backed up with .syntax-backup extension"
     else
         print_success "Environment file syntax validation completed"
+        # Clean up unnecessary backup files if no changes were made
+        rm -f .env.syntax-backup apps/frontend/.env.syntax-backup 2>/dev/null || true
     fi
 }
 
@@ -411,10 +420,17 @@ validate_env_files() {
         # Check SSL certificates if HTTPS
         if [[ "$external_protocol" == "https" ]]; then
             if [[ -f "infra/nginx/ssl/server.crt" && -f "infra/nginx/ssl/server.key" ]]; then
-                print_success "SSL certificates found for HTTPS"
+                # Check if it's a Let's Encrypt certificate
+                local cert_issuer=$(openssl x509 -in "infra/nginx/ssl/server.crt" -issuer -noout 2>/dev/null | grep -i "let's encrypt" || echo "")
+                if [[ -n "$cert_issuer" ]]; then
+                    print_success "Let's Encrypt SSL certificates found for HTTPS"
+                else
+                    print_success "SSL certificates found for HTTPS (custom/self-signed)"
+                fi
             else
                 print_warning "HTTPS configured but SSL certificates missing"
-                print_info "Certificates will be auto-generated during build if needed"
+                print_info "For domain names: Let's Encrypt certificates will be generated automatically"
+                print_info "For custom certificates: Place server.crt and server.key in infra/nginx/ssl/"
             fi
         fi
     fi
@@ -653,6 +669,8 @@ show_completion_info() {
     if [[ "$frontend_url" == "http://localhost:3000" ]]; then
         echo -e "${YELLOW}💡 Need external access?${NC}"
         echo "Run: ./configure-external-access.sh"
+        echo "  • Public IP Access: HTTP only (perfect for AWS EC2)"
+        echo "  • Domain Name Access: HTTP or HTTPS with Let's Encrypt"
         echo ""
     fi
     

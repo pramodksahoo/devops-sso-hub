@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Let's Encrypt SSL Certificate Setup for SSO Hub
-# Automatic SSL certificate generation and renewal for domain names
+# SSL Certificate Setup for SSO Hub
+# Automatic Let's Encrypt SSL certificate generation and renewal for domain names only
+# For IP addresses, use external SSL termination (ALB, CloudFlare, etc.)
 
 set -e
 
@@ -15,7 +16,7 @@ NC='\033[0m'
 print_header() {
     echo ""
     echo -e "${BLUE}============================================${NC}"
-    echo -e "${BLUE}    SSO Hub Let's Encrypt SSL Setup       ${NC}"
+    echo -e "${BLUE}      SSO Hub SSL Certificate Setup       ${NC}"
     echo -e "${BLUE}============================================${NC}"
     echo ""
 }
@@ -80,15 +81,19 @@ validate_domain() {
     
     # Check if it's an IP address
     if [[ $EXTERNAL_HOST =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        print_error "Let's Encrypt requires a domain name, not an IP address: $EXTERNAL_HOST"
-        print_info "For IP addresses, use the self-signed certificate generator: ./generate-ssl-certs.sh"
+        print_error "SSL certificates require a domain name, not an IP address: $EXTERNAL_HOST"
+        print_info "For IP addresses, use external SSL termination:"
+        print_info "  • AWS ALB/NLB with SSL certificates"
+        print_info "  • CloudFlare with SSL/TLS encryption"
+        print_info "  • Add DNS A record: your-domain.com → $EXTERNAL_HOST"
         exit 1
     fi
     
     # Check if it's localhost
     if [[ "$EXTERNAL_HOST" == "localhost" ]]; then
-        print_error "Let's Encrypt cannot issue certificates for localhost"
-        print_info "For localhost, use the self-signed certificate generator: ./generate-ssl-certs.sh"
+        print_error "SSL certificates cannot be issued for localhost"
+        print_info "For localhost development, use HTTP instead"
+        print_info "Or use a real domain name pointing to your development server"
         exit 1
     fi
     
@@ -484,7 +489,7 @@ main() {
 # Handle command line arguments
 case "${1:-}" in
     -h|--help)
-        echo "Let's Encrypt SSL Certificate Setup for SSO Hub"
+        echo "SSL Certificate Setup for SSO Hub"
         echo ""
         echo "Usage: $0 [options]"
         echo ""
@@ -493,6 +498,8 @@ case "${1:-}" in
         echo ""
         echo "This script generates valid SSL certificates using Let's Encrypt."
         echo "It requires a domain name (not IP address) that points to this server."
+        echo ""
+        echo "For IP addresses, use external SSL termination instead."
         exit 0
         ;;
     "")

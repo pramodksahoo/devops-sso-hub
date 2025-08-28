@@ -48,11 +48,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP_SUFFIX="backup-$(date +%Y%m%d-%H%M%S)"
 
 # Global configuration variables
-declare -g EXTERNAL_HOST=""
-declare -g EXTERNAL_PROTOCOL=""
-declare -g EXTERNAL_PORT=""
-declare -g USE_LETSENCRYPT=false
-declare -g USE_SELFSIGNED=false
+EXTERNAL_HOST=""
+EXTERNAL_PROTOCOL=""
+EXTERNAL_PORT=""
+USE_LETSENCRYPT=false
+USE_SELFSIGNED=false
 
 # Auto-detect current IP
 detect_current_ip() {
@@ -123,10 +123,8 @@ show_deployment_options_header() {
     echo -e "${CYAN}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║                           DEPLOYMENT OPTIONS                              ║${NC}"
     echo -e "${CYAN}╠════════════════════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${CYAN}║ ${BLUE}1${NC} → ${GREEN}HTTP Only${NC}           ${YELLOW}Development/Testing${NC} - Quick setup, no SSL     ║"
-    echo -e "${CYAN}║ ${BLUE}2${NC} → ${GREEN}HTTPS Self-signed${NC}   ${YELLOW}Private Networks${NC}    - Secure with warnings   ║"
-    echo -e "${CYAN}║ ${BLUE}3${NC} → ${GREEN}HTTPS Let's Encrypt${NC} ${YELLOW}Production Ready${NC}    - Valid SSL certificate  ║"
-    echo -e "${CYAN}║ ${BLUE}4${NC} → ${GREEN}Custom Setup${NC}       ${YELLOW}Advanced Users${NC}      - Manual configuration   ║"
+    echo -e "${CYAN}║ ${BLUE}1${NC} → ${GREEN}Public IP Access${NC}    ${YELLOW}AWS EC2/VM${NC}          - HTTP only, external SSL ║"
+    echo -e "${CYAN}║ ${BLUE}2${NC} → ${GREEN}Domain Name Access${NC}  ${YELLOW}Production Ready${NC}    - HTTP or HTTPS options  ║"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -135,199 +133,90 @@ show_deployment_options_header() {
 show_deployment_options() {
     echo -e "${CYAN}Choose Your Deployment Type:${NC}"
     echo ""
-    echo -e "${BLUE}1) HTTP Only${NC} ${YELLOW}(Development/Testing)${NC}"
-    echo "   ✓ Quick setup for development"
-    echo "   ✓ Works with localhost or external IP"
-    echo "   ✓ No SSL certificate required"
-    echo "   ⚠ Not secure for production use"
+    echo -e "${BLUE}1) Public IP Access${NC} ${YELLOW}(AWS EC2, VM, Server)${NC}"
+    echo "   ✓ Direct access via public IP address"
+    echo "   ✓ HTTP only - no SSL certificates needed from application"
+    echo "   ✓ Access: http://YOUR_IP:3000"
+    echo "   ✓ For HTTPS: Use CloudFlare, ALB, or add DNS A record + external certs"
+    echo "   ✓ Perfect for development, testing, or behind load balancers"
     echo ""
-    echo -e "${BLUE}2) HTTPS with Self-Signed Certificate${NC} ${YELLOW}(Private Networks)${NC}"
-    echo "   ✓ Secure encrypted connection"
-    echo "   ✓ Works with IP addresses or domains"
-    echo "   ⚠ Browser shows security warning (safe to accept)"
-    echo "   ✓ Good for internal/private networks"
-    echo ""
-    echo -e "${BLUE}3) HTTPS with Let's Encrypt Certificate${NC} ${GREEN}(Production Ready)${NC}"
-    echo "   ✓ Production-ready with valid SSL certificate"
-    echo "   ✓ No browser security warnings"
-    echo "   ✓ Automatic certificate renewal"
-    echo "   ⚠ Requires domain name (not IP address)"
-    echo "   ⚠ Domain must point to this server"
-    echo ""
-    echo -e "${BLUE}4) Custom Configuration${NC} ${BLUE}(Advanced Users)${NC}"
-    echo "   ✓ Full control over all settings"
-    echo "   ✓ Advanced SSL options"
-    echo "   ✓ Custom ports and protocols"
+    echo -e "${BLUE}2) Domain Name Access${NC} ${GREEN}(Production Ready)${NC}"
+    echo "   ✓ Access via custom domain name"
+    echo "   ✓ Choice of HTTP or HTTPS"
+    echo "   ✓ HTTPS with automatic Let's Encrypt certificates"
+    echo "   ✓ Access: https://sso.yourdomain.com or http://sso.yourdomain.com"
+    echo "   ⚠ Requires domain name pointing to this server"
     echo ""
 }
 
 
-# Configure HTTP deployment
-configure_http() {
-    print_step "Configuring HTTP deployment..."
+# Configure Public IP deployment (HTTP only)
+configure_public_ip() {
+    print_step "Configuring Public IP access..."
     
     local current_ip=$(detect_current_ip)
     
     echo ""
-    echo -e "${CYAN}HTTP Deployment Configuration:${NC}"
+    echo -e "${CYAN}Public IP Configuration:${NC}"
     echo ""
-    echo "1) Localhost only (http://localhost)"
-    echo "2) External IP access (http://your-ip)"
-    echo "3) Custom host"
+    print_info "This will configure HTTP access via your server's public IP address"
+    print_info "No SSL certificates will be generated from the application"
     echo ""
     
-    while true; do
-        read -p "Select option (1-3): " -n 1 -r http_choice
+    if [[ -n "$current_ip" ]]; then
+        echo "Detected public IP: $current_ip"
         echo ""
-        
-        case $http_choice in
-            1)
-                EXTERNAL_HOST="localhost"
-                break
-                ;;
-            2)
-                if [[ -n "$current_ip" ]]; then
-                    EXTERNAL_HOST="$current_ip"
-                    print_success "Using detected IP: $EXTERNAL_HOST"
-                else
-                    echo ""
-                    read -p "Enter your server's IP address: " EXTERNAL_HOST
-                    # Validate IP format
-                    if [[ $EXTERNAL_HOST =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                        print_success "IP address validated: $EXTERNAL_HOST"
-                    else
-                        print_warning "Invalid IP format, but proceeding with: $EXTERNAL_HOST"
-                    fi
-                fi
-                break
-                ;;
-            3)
-                echo ""
-                read -p "Enter custom host (IP or domain): " EXTERNAL_HOST
-                if [[ -n "$EXTERNAL_HOST" ]]; then
-                    print_success "Using custom host: $EXTERNAL_HOST"
-                    break
-                else
-                    print_error "Host cannot be empty"
-                fi
-                ;;
-            *)
-                print_error "Invalid choice. Please select 1, 2, or 3."
-                ;;
-        esac
-    done
+        read -p "Use detected IP ($current_ip)? (y/n): " -n 1 -r
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            EXTERNAL_HOST="$current_ip"
+        else
+            read -p "Enter your server's public IP address: " EXTERNAL_HOST
+            # Validate IP format
+            if [[ $EXTERNAL_HOST =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                print_success "IP address validated: $EXTERNAL_HOST"
+            else
+                print_warning "Invalid IP format, but proceeding with: $EXTERNAL_HOST"
+            fi
+        fi
+    else
+        read -p "Enter your server's public IP address: " EXTERNAL_HOST
+        if [[ $EXTERNAL_HOST =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            print_success "IP address validated: $EXTERNAL_HOST"
+        else
+            print_warning "Invalid IP format, but proceeding with: $EXTERNAL_HOST"
+        fi
+    fi
     
     EXTERNAL_PROTOCOL="http"
     EXTERNAL_PORT=""
-    
-    # Ask for custom port
-    echo ""
-    read -p "Custom port (leave empty for default 80): " custom_port
-    if [[ -n "$custom_port" ]]; then
-        EXTERNAL_PORT=":$custom_port"
-        print_info "Using custom port: $custom_port"
-    else
-        print_info "Using default HTTP port (80)"
-    fi
+    USE_LETSENCRYPT=false
+    USE_SELFSIGNED=false
     
     echo ""
-    print_success "✅ HTTP configuration completed successfully"
-    print_info "Configuration: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}"
+    print_success "✅ Public IP configuration completed successfully"
+    print_info "Configuration: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}"
+    print_info "Access URL: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3000"
+    echo ""
+    print_info "${YELLOW}For HTTPS with this IP:${NC}"
+    print_info "  • Add DNS A record: your-domain.com → $EXTERNAL_HOST"
+    print_info "  • Use CloudFlare, AWS ALB, or external proxy for SSL termination"
+    print_info "  • Then run this script again with Domain Name option"
     
     return 0
 }
 
-# Configure HTTPS with self-signed certificate
-configure_https_selfsigned() {
-    print_step "Configuring HTTPS with self-signed certificate..."
-    
-    local current_ip=$(detect_current_ip)
+# Configure Domain Name deployment (HTTP or HTTPS choice)
+configure_domain_name() {
+    print_step "Configuring Domain Name access..."
     
     echo ""
-    echo -e "${CYAN}HTTPS Self-Signed Certificate Configuration:${NC}"
+    echo -e "${CYAN}Domain Name Configuration:${NC}"
     echo ""
-    print_info "Self-signed certificates work with both IP addresses and domain names"
-    print_warning "Browsers will show a security warning (safe to proceed)"
-    echo ""
-    echo "1) External IP address"
-    echo "2) Domain name"
-    echo "3) Custom host"
+    print_info "This will configure access via your custom domain name"
     echo ""
     
-    while true; do
-        read -p "Select option (1-3): " -n 1 -r https_choice
-        echo ""
-        
-        case $https_choice in
-            1)
-                if [[ -n "$current_ip" ]]; then
-                    EXTERNAL_HOST="$current_ip"
-                    print_success "Using detected IP: $EXTERNAL_HOST"
-                else
-                    echo ""
-                    read -p "Enter your server's IP address: " EXTERNAL_HOST
-                    # Validate IP format
-                    if [[ $EXTERNAL_HOST =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                        print_success "IP address validated: $EXTERNAL_HOST"
-                    else
-                        print_error "Invalid IP format: $EXTERNAL_HOST"
-                        continue
-                    fi
-                fi
-                break
-                ;;
-            2)
-                echo ""
-                read -p "Enter your domain name (e.g., example.com): " EXTERNAL_HOST
-                if [[ -n "$EXTERNAL_HOST" && ! $EXTERNAL_HOST =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                    print_success "Using domain: $EXTERNAL_HOST"
-                    break
-                else
-                    print_error "Please enter a valid domain name"
-                fi
-                ;;
-            3)
-                echo ""
-                read -p "Enter custom host: " EXTERNAL_HOST
-                if [[ -n "$EXTERNAL_HOST" ]]; then
-                    print_success "Using custom host: $EXTERNAL_HOST"
-                    break
-                else
-                    print_error "Host cannot be empty"
-                fi
-                ;;
-            *)
-                print_error "Invalid choice. Please select 1, 2, or 3."
-                ;;
-        esac
-    done
-    
-    EXTERNAL_PROTOCOL="https"
-    EXTERNAL_PORT=""
-    USE_SELFSIGNED=true
-    
-    echo ""
-    print_success "✅ HTTPS self-signed configuration completed successfully"
-    print_info "Configuration: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}"
-    print_info "SSL certificate will be generated for: $EXTERNAL_HOST"
-    
-    return 0
-}
-
-# Configure HTTPS with Let's Encrypt
-configure_https_letsencrypt() {
-    print_step "Configuring HTTPS with Let's Encrypt certificate..."
-    
-    echo ""
-    echo -e "${CYAN}Let's Encrypt SSL Certificate Configuration:${NC}"
-    echo ""
-    print_warning "⚠️  Let's Encrypt Requirements:"
-    echo "   • Must use a domain name (not IP address)"
-    echo "   • Domain must point to this server"
-    echo "   • Port 80 must be accessible from internet"
-    echo "   • Valid for production use"
-    echo ""
-    
+    # Get domain name
     while true; do
         read -p "Enter your domain name (e.g., sso.example.com): " EXTERNAL_HOST
         
@@ -338,70 +227,42 @@ configure_https_letsencrypt() {
         
         # Validate domain (not IP address)
         local host_type=$(detect_host_type "$EXTERNAL_HOST")
-        if [[ "$host_type" != "domain" ]]; then
-            print_error "Let's Encrypt requires a domain name, not an IP address"
-            print_info "For IP addresses, use option 2 (HTTPS with self-signed certificate)"
+        if [[ "$host_type" == "ip" ]]; then
+            print_error "Please use the Public IP option for IP addresses"
+            print_info "This option is for domain names only"
+            continue
+        fi
+        
+        if [[ "$host_type" == "localhost" ]]; then
+            print_error "Please use a real domain name, not localhost"
             continue
         fi
         
         print_success "Using domain: $EXTERNAL_HOST"
-        
-        # Check if domain resolves (optional warning)
-        local current_ip=$(detect_current_ip)
-        if [[ -n "$current_ip" ]] && command -v dig &> /dev/null; then
-            local domain_ip=$(dig +short "$EXTERNAL_HOST" | tail -n1)
-            if [[ -n "$domain_ip" && "$domain_ip" != "$current_ip" ]]; then
-                print_warning "Domain $EXTERNAL_HOST resolves to $domain_ip, but this server is $current_ip"
-                echo ""
-                read -p "Continue anyway? (y/n): " -n 1 -r
-                echo ""
-                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                    continue
-                fi
-            fi
-        fi
-        
         break
     done
     
-    EXTERNAL_PROTOCOL="https"
-    EXTERNAL_PORT=""
-    USE_LETSENCRYPT=true
-    
-    echo ""
-    print_success "✅ Let's Encrypt configuration completed successfully"
-    print_info "Configuration: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}"
-    print_info "Let's Encrypt certificate will be generated for: $EXTERNAL_HOST"
-    print_warning "Make sure port 80 is open and accessible from the internet"
-    
-    return 0
-}
-
-# Configure custom options
-configure_custom() {
-    print_step "Configuring custom deployment..."
-    
-    echo ""
-    echo -e "${CYAN}Custom Configuration - Advanced Options:${NC}"
-    echo ""
-    
-    # Get host
-    while true; do
-        read -p "Enter host (IP address or domain name): " EXTERNAL_HOST
-        if [[ -n "$EXTERNAL_HOST" ]]; then
-            local host_type=$(detect_host_type "$EXTERNAL_HOST")
-            print_success "Using host: $EXTERNAL_HOST (detected as: $host_type)"
-            break
-        else
-            print_error "Host cannot be empty"
+    # Check if domain resolves (optional warning)
+    local current_ip=$(detect_current_ip)
+    if [[ -n "$current_ip" ]] && command -v dig &> /dev/null; then
+        local domain_ip=$(dig +short "$EXTERNAL_HOST" | tail -n1)
+        if [[ -n "$domain_ip" && "$domain_ip" != "$current_ip" ]]; then
+            print_warning "Domain $EXTERNAL_HOST resolves to $domain_ip, but this server is $current_ip"
+            print_warning "Make sure your domain points to this server before proceeding"
+            echo ""
+            read -p "Continue anyway? (y/n): " -n 1 -r
+            echo ""
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                return 1
+            fi
         fi
-    done
+    fi
     
-    # Get protocol
+    # Choose protocol
     echo ""
     echo "Protocol options:"
-    echo "1) HTTP (no encryption)"
-    echo "2) HTTPS (encrypted)"
+    echo "1) HTTP - No SSL certificates (good for development or behind load balancer)"
+    echo "2) HTTPS - Automatic Let's Encrypt SSL certificates (production ready)"
     echo ""
     
     while true; do
@@ -411,50 +272,17 @@ configure_custom() {
         case $proto_choice in
             1)
                 EXTERNAL_PROTOCOL="http"
+                USE_LETSENCRYPT=false
+                USE_SELFSIGNED=false
+                print_success "HTTP selected - no SSL certificates will be configured"
                 break
                 ;;
             2)
                 EXTERNAL_PROTOCOL="https"
-                
-                # SSL certificate options for HTTPS
-                echo ""
-                echo "SSL certificate options:"
-                echo "1) Generate self-signed certificate"
-                echo "2) Use Let's Encrypt certificate"
-                echo "3) Use existing certificate"
-                echo ""
-                
-                while true; do
-                    read -p "Select SSL option (1-3): " -n 1 -r ssl_choice
-                    echo ""
-                    
-                    case $ssl_choice in
-                        1)
-                            USE_SELFSIGNED=true
-                            print_info "Will generate self-signed certificate"
-                            break
-                            ;;
-                        2)
-                            local host_type=$(detect_host_type "$EXTERNAL_HOST")
-                            if [[ "$host_type" != "domain" ]]; then
-                                print_error "Let's Encrypt requires a domain name, not an IP address"
-                                print_info "Please use option 1 (self-signed) for IP addresses"
-                                continue
-                            fi
-                            USE_LETSENCRYPT=true
-                            print_info "Will use Let's Encrypt certificate"
-                            break
-                            ;;
-                        3)
-                            print_info "Will use existing certificate from infra/nginx/ssl/"
-                            print_warning "Make sure server.crt and server.key exist in that directory"
-                            break
-                            ;;
-                        *)
-                            print_error "Invalid choice. Please select 1, 2, or 3."
-                            ;;
-                    esac
-                done
+                USE_LETSENCRYPT=true
+                USE_SELFSIGNED=false
+                print_success "HTTPS selected - Let's Encrypt certificates will be configured"
+                print_warning "Make sure port 80 is open and accessible from internet for validation"
                 break
                 ;;
             *)
@@ -463,29 +291,21 @@ configure_custom() {
         esac
     done
     
-    # Get custom port
-    echo ""
-    read -p "Custom port (leave empty for default): " custom_port
-    if [[ -n "$custom_port" ]]; then
-        # Validate port number
-        if [[ "$custom_port" =~ ^[0-9]+$ ]] && [ "$custom_port" -gt 0 ] && [ "$custom_port" -lt 65536 ]; then
-            EXTERNAL_PORT=":$custom_port"
-            print_info "Using custom port: $custom_port"
-        else
-            print_warning "Invalid port number, using default"
-            EXTERNAL_PORT=""
-        fi
-    else
-        EXTERNAL_PORT=""
-        print_info "Using default port"
-    fi
+    EXTERNAL_PORT=""
     
     echo ""
-    print_success "✅ Custom configuration completed successfully"
+    print_success "✅ Domain Name configuration completed successfully"
     print_info "Configuration: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}${EXTERNAL_PORT}"
+    print_info "Access URL: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3000"
+    
+    if [[ "$USE_LETSENCRYPT" == "true" ]]; then
+        print_info "Let's Encrypt certificate will be generated for: $EXTERNAL_HOST"
+    fi
     
     return 0
 }
+
+
 
 # Update frontend environment configuration
 update_frontend_env_config() {
@@ -594,31 +414,26 @@ update_env_config() {
     print_success "Environment configuration updated"
 }
 
-# Generate SSL certificates
+# Generate SSL certificates (Let's Encrypt only)
 setup_ssl_certificates() {
     if [[ "$EXTERNAL_PROTOCOL" == "https" ]]; then
         if [[ "$USE_LETSENCRYPT" == "true" ]]; then
             print_step "Setting up Let's Encrypt certificate..."
-            if [ -x "./letsencrypt-setup.sh" ]; then
-                print_info "Running Let's Encrypt setup..."
+            if [ -x "./ssl-setup.sh" ]; then
+                print_info "Running SSL certificate setup..."
                 echo ""
-                ./letsencrypt-setup.sh
+                ./ssl-setup.sh
             else
-                print_error "Let's Encrypt setup script not found"
+                print_error "SSL setup script not found"
                 return 1
             fi
-        elif [[ "$USE_SELFSIGNED" == "true" ]] || [[ ! -f "infra/nginx/ssl/server.crt" ]]; then
-            print_step "Generating self-signed certificate..."
-            if [ -x "./generate-ssl-certs.sh" ]; then
-                print_info "Running SSL certificate generation..."
-                echo ""
-                ./generate-ssl-certs.sh
-            else
-                print_error "SSL certificate generation script not found"
-                return 1
-            fi
-        else
+        elif [[ -f "infra/nginx/ssl/server.crt" && -f "infra/nginx/ssl/server.key" ]]; then
             print_info "Using existing SSL certificates"
+        else
+            print_error "HTTPS selected but no SSL certificates available"
+            print_info "Please provide certificates in infra/nginx/ssl/ directory"
+            print_info "Required files: server.crt and server.key"
+            return 1
         fi
     fi
 }
@@ -751,7 +566,7 @@ main() {
     
     local choice
     while true; do
-        read -p "Select deployment option (1-4): " -n 1 -r choice
+        read -p "Select deployment option (1-2): " -n 1 -r choice
         echo ""
         
         # Reset global variables for each attempt
@@ -764,39 +579,23 @@ main() {
         echo ""
         case $choice in
             1)
-                if configure_http; then
+                if configure_public_ip; then
                     break
                 else
-                    print_error "HTTP configuration failed, please try again"
+                    print_error "Public IP configuration failed, please try again"
                     echo ""
                 fi
                 ;;
             2)
-                if configure_https_selfsigned; then
+                if configure_domain_name; then
                     break
                 else
-                    print_error "HTTPS self-signed configuration failed, please try again"
-                    echo ""
-                fi
-                ;;
-            3)
-                if configure_https_letsencrypt; then
-                    break
-                else
-                    print_error "Let's Encrypt configuration failed, please try again"
-                    echo ""
-                fi
-                ;;
-            4)
-                if configure_custom; then
-                    break
-                else
-                    print_error "Custom configuration failed, please try again"
+                    print_error "Domain Name configuration failed, please try again"
                     echo ""
                 fi
                 ;;
             *)
-                print_error "Invalid choice. Please select 1, 2, 3, or 4."
+                print_error "Invalid choice. Please select 1 or 2."
                 echo ""
                 ;;
         esac
