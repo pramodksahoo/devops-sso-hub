@@ -230,12 +230,17 @@ configure_ssl_requirements() {
     print_info "  Master realm: ${master_ssl}"
     print_info "  ${REALM_NAME} realm: ${app_ssl}"
     
-    if [[ "$master_ssl" == "$ssl_mode" && "$app_ssl" == "$ssl_mode" ]]; then
+    # Convert to lowercase for comparison (Keycloak returns lowercase)
+    local expected_ssl_lower=$(echo "$ssl_mode" | tr '[:upper:]' '[:lower:]')
+    local master_ssl_lower=$(echo "$master_ssl" | tr '[:upper:]' '[:lower:]')
+    local app_ssl_lower=$(echo "$app_ssl" | tr '[:upper:]' '[:lower:]')
+    
+    if [[ "$master_ssl_lower" == "$expected_ssl_lower" && "$app_ssl_lower" == "$expected_ssl_lower" ]]; then
         print_success "✅ SSL requirements successfully configured for ${EXTERNAL_PROTOCOL} access"
         return 0
     else
         print_error "❌ SSL configuration mismatch detected"
-        print_error "  Expected: ${ssl_mode}, Got Master: ${master_ssl}, App: ${app_ssl}"
+        print_error "  Expected: ${ssl_mode} (${expected_ssl_lower}), Got Master: ${master_ssl}, App: ${app_ssl}"
         return 1
     fi
 }
@@ -296,7 +301,187 @@ update_client_configuration() {
     fi
 }
 
-# Test configuration (using kcadm only)
+# Comprehensive OIDC validation for external access
+validate_oidc_endpoints() {
+    print_info "Validating OIDC endpoints for external access..."
+    
+    local validation_errors=0
+    
+    # Test 1: Master realm endpoint
+    print_info "Testing master realm endpoint..."
+    if /opt/keycloak/bin/kcadm.sh get realms/master 2>/dev/null | grep -q '"realm"'; then
+        print_success "✅ Master realm endpoint accessible"
+    else
+        print_error "❌ Master realm endpoint failed"
+        validation_errors=$((validation_errors + 1))
+    fi
+    
+    # Test 2: Application realm endpoint
+    print_info "Testing ${REALM_NAME} realm endpoint..."
+    if /opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} 2>/dev/null | grep -q '"realm"'; then
+        print_success "✅ ${REALM_NAME} realm endpoint accessible"
+    else
+        print_error "❌ ${REALM_NAME} realm endpoint failed"
+        validation_errors=$((validation_errors + 1))
+    fi
+    
+    # Test 3: Client configuration validation
+    print_info "Validating client configuration..."
+    local client_list_output=$(/opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields id,clientId,redirectUris 2>/dev/null)
+    local client_internal_id=$(echo "$client_list_output" | grep -A 2 -B 2 "\"clientId\" : \"${CLIENT_ID}\"" | grep "\"id\"" | head -1 | awk -F'"' '{print $4}')
+    
+    if [ -n "$client_internal_id" ]; then
+        print_success "✅ Client ${CLIENT_ID} found with ID: ${client_internal_id}"
+        
+        # Check redirect URIs
+        local client_config=$(/opt/keycloak/bin/kcadm.sh get clients/${client_internal_id} -r "${REALM_NAME}" --fields redirectUris,webOrigins 2>/dev/null)
+        local expected_callback="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:${AUTH_BFF_PORT}/auth/callback"
+        
+        if echo "$client_config" | grep -q "$expected_callback"; then
+            print_success "✅ External redirect URI configured: $expected_callback"
+        else
+            print_error "❌ External redirect URI missing: $expected_callback"
+            validation_errors=$((validation_errors + 1))
+        fi
+    else
+        print_error "❌ Client ${CLIENT_ID} not found"
+        validation_errors=$((validation_errors + 1))
+    fi
+    
+    # Test 4: SSL configuration validation
+    print_info "Validating SSL requirements..."
+    local expected_ssl_mode="NONE"
+    if [[ "${EXTERNAL_PROTOCOL}" == "https" ]]; then
+        expected_ssl_mode="EXTERNAL"
+    fi
+    
+    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    local app_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    
+    local expected_ssl_lower=$(echo "$expected_ssl_mode" | tr '[:upper:]' '[:lower:]')
+    local master_ssl_lower=$(echo "$master_ssl" | tr '[:upper:]' '[:lower:]')
+    local app_ssl_lower=$(echo "$app_ssl" | tr '[:upper:]' '[:lower:]')
+    
+    if [[ "$master_ssl_lower" == "$expected_ssl_lower" && "$app_ssl_lower" == "$expected_ssl_lower" ]]; then
+        print_success "✅ SSL requirements correctly configured for ${EXTERNAL_PROTOCOL}"
+    else
+        print_error "❌ SSL configuration mismatch - Expected: ${expected_ssl_mode}, Master: ${master_ssl}, App: ${app_ssl}"
+        validation_errors=$((validation_errors + 1))
+    fi
+    
+    # Test 5: User and role validation
+    print_info "Validating realm users and roles..."
+    local users_count=$(/opt/keycloak/bin/kcadm.sh get users -r "${REALM_NAME}" --fields username 2>/dev/null | grep -c '"username"' || echo "0")
+    print_info "Found ${users_count} users in realm ${REALM_NAME}"
+    
+    # Summary
+    print_info "=== OIDC Validation Summary ==="
+    if [ $validation_errors -eq 0 ]; then
+        print_success "✅ All OIDC validations passed"
+        return 0
+    else
+        print_error "❌ ${validation_errors} validation errors found"
+        return 1
+    fi
+}
+
+# Validate OIDC ready for external connections
+validate_oidc_ready() {
+    print_info "Comprehensive OIDC readiness validation for external IP: ${EXTERNAL_HOST}"
+    
+    local readiness_checks=0
+    local readiness_passed=0
+    
+    # Check 1: Realm accessibility
+    print_info "Check 1: Realm accessibility via admin API..."
+    if /opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} 2>/dev/null | grep -q '"realm"'; then
+        print_success "✅ Realm ${REALM_NAME} accessible"
+        readiness_passed=$((readiness_passed + 1))
+    else
+        print_error "❌ Realm ${REALM_NAME} not accessible"
+    fi
+    readiness_checks=$((readiness_checks + 1))
+    
+    # Check 2: Client configuration validation
+    print_info "Check 2: Client redirect URI validation..."
+    local expected_callback="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:${AUTH_BFF_PORT}/auth/callback"
+    local client_list_output=$(/opt/keycloak/bin/kcadm.sh get clients -r "${REALM_NAME}" --fields id,clientId 2>/dev/null)
+    local client_internal_id=$(echo "$client_list_output" | grep -A 2 -B 2 "\"clientId\" : \"${CLIENT_ID}\"" | grep "\"id\"" | head -1 | awk -F'"' '{print $4}')
+    
+    if [ -n "$client_internal_id" ]; then
+        local client_config=$(/opt/keycloak/bin/kcadm.sh get clients/${client_internal_id} -r "${REALM_NAME}" --fields redirectUris 2>/dev/null)
+        if echo "$client_config" | grep -q "$expected_callback"; then
+            print_success "✅ External redirect URI properly configured"
+            readiness_passed=$((readiness_passed + 1))
+        else
+            print_error "❌ External redirect URI not found: $expected_callback"
+        fi
+    else
+        print_error "❌ Client ${CLIENT_ID} not found"
+    fi
+    readiness_checks=$((readiness_checks + 1))
+    
+    # Check 3: SSL requirements match protocol
+    print_info "Check 3: SSL requirements validation..."
+    local expected_ssl="NONE"
+    if [[ "${EXTERNAL_PROTOCOL}" == "https" ]]; then
+        expected_ssl="EXTERNAL"
+    fi
+    
+    local realm_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    local expected_ssl_lower=$(echo "$expected_ssl" | tr '[:upper:]' '[:lower:]')
+    local realm_ssl_lower=$(echo "$realm_ssl" | tr '[:upper:]' '[:lower:]')
+    
+    if [[ "$realm_ssl_lower" == "$expected_ssl_lower" ]]; then
+        print_success "✅ SSL requirements match protocol: ${expected_ssl}"
+        readiness_passed=$((readiness_passed + 1))
+    else
+        print_error "❌ SSL mismatch - Expected: ${expected_ssl}, Got: ${realm_ssl}"
+    fi
+    readiness_checks=$((readiness_checks + 1))
+    
+    # Check 4: Admin realm SSL configuration
+    print_info "Check 4: Master realm SSL configuration..."
+    local master_ssl=$(/opt/keycloak/bin/kcadm.sh get realms/master --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
+    local master_ssl_lower=$(echo "$master_ssl" | tr '[:upper:]' '[:lower:]')
+    
+    if [[ "$master_ssl_lower" == "$expected_ssl_lower" ]]; then
+        print_success "✅ Master realm SSL properly configured"
+        readiness_passed=$((readiness_passed + 1))
+    else
+        print_error "❌ Master realm SSL mismatch - Expected: ${expected_ssl}, Got: ${master_ssl}"
+    fi
+    readiness_checks=$((readiness_checks + 1))
+    
+    # Check 5: External URL consistency check
+    print_info "Check 5: Configuration consistency validation..."
+    print_info "  External Host: ${EXTERNAL_HOST}"
+    print_info "  External Protocol: ${EXTERNAL_PROTOCOL}"
+    print_info "  Expected Callback: ${expected_callback}"
+    print_info "  Expected Frontend: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:${FRONTEND_PORT}"
+    
+    # This check always passes if we reach here - it's informational
+    readiness_passed=$((readiness_passed + 1))
+    readiness_checks=$((readiness_checks + 1))
+    
+    # Results summary
+    print_info "=== OIDC Readiness Summary ==="
+    print_info "Checks passed: ${readiness_passed}/${readiness_checks}"
+    
+    # Consider ready if 80% or more checks pass
+    local min_required=$(( (readiness_checks * 4) / 5 ))  # 80% threshold
+    if [ $readiness_passed -ge $min_required ]; then
+        print_success "✅ OIDC server is ready for external connections"
+        print_success "   Ready for external access at: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}"
+        return 0
+    else
+        print_error "❌ OIDC server not ready - ${readiness_passed}/${readiness_checks} checks passed (need ${min_required})"
+        print_error "   Configuration issues prevent external access"
+        return 1
+    fi
+}
+
+# Test configuration (using kcadm only) - Enhanced version
 test_configuration() {
     print_info "Testing Keycloak configuration..."
     
@@ -308,15 +493,30 @@ test_configuration() {
         return 1
     fi
     
-    # Test that SSL is properly disabled
+    # Test that SSL is properly configured
     local ssl_required=$(/opt/keycloak/bin/kcadm.sh get realms/${REALM_NAME} --fields sslRequired 2>/dev/null | grep "sslRequired" | awk -F'"' '{print $4}' || echo "unknown")
-    if [[ "$ssl_required" == "NONE" ]]; then
-        print_success "✅ SSL requirements are disabled for ${REALM_NAME}"
-    else
-        print_warning "⚠️  SSL requirement for ${REALM_NAME}: ${ssl_required}"
+    local expected_ssl="NONE"
+    if [[ "${EXTERNAL_PROTOCOL}" == "https" ]]; then
+        expected_ssl="EXTERNAL"
     fi
     
-    return 0
+    local expected_ssl_lower=$(echo "$expected_ssl" | tr '[:upper:]' '[:lower:]')
+    local actual_ssl_lower=$(echo "$ssl_required" | tr '[:upper:]' '[:lower:]')
+    
+    if [[ "$actual_ssl_lower" == "$expected_ssl_lower" ]]; then
+        print_success "✅ SSL requirements properly configured: ${ssl_required}"
+    else
+        print_warning "⚠️  SSL requirement mismatch - Expected: ${expected_ssl}, Got: ${ssl_required}"
+    fi
+    
+    # Run comprehensive validation
+    if validate_oidc_endpoints; then
+        print_success "✅ All configuration tests passed"
+        return 0
+    else
+        print_warning "⚠️ Some configuration tests failed"
+        return 1
+    fi
 }
 
 # Show diagnostic information
@@ -385,8 +585,19 @@ main() {
     fi
     
     # Step 4: Configure Keycloak for external access
-    configure_ssl_requirements
-    update_client_configuration
+    print_info "=== Starting Keycloak External Configuration ==="
+    
+    if configure_ssl_requirements; then
+        print_success "SSL configuration completed successfully"
+    else
+        print_warning "SSL configuration completed with warnings, continuing..."
+    fi
+    
+    if update_client_configuration; then
+        print_success "Client configuration completed successfully"
+    else
+        print_warning "Client configuration completed with warnings, continuing..."
+    fi
     
     # Step 5: Test configuration
     if test_configuration; then

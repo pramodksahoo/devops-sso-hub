@@ -73,8 +73,9 @@ services:
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:-keycloak_password}
       
       # Network configuration (v2 format - Keycloak 2024)
-      KC_HOSTNAME: ${EXTERNAL_HOST:-localhost}
-      KC_HOSTNAME_PORT: "8080"
+      # Use full URL format for external access as per Keycloak docs
+      KC_HOSTNAME: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:8080
+      KC_HOSTNAME_ADMIN: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:8080
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false" 
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"

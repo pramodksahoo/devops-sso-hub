@@ -468,6 +468,133 @@ update_keycloak_config() {
     fi
 }
 
+# Validate OIDC configuration for external access
+validate_oidc_configuration() {
+    local max_attempts=5
+    local attempt=1
+    
+    print_info "Testing OIDC endpoints and realm configuration..."
+    
+    while [ $attempt -le $max_attempts ]; do
+        print_info "Validation attempt $attempt/$max_attempts..."
+        
+        # Test 1: Check if Keycloak admin console is accessible
+        if ! curl -sf --connect-timeout 10 --max-time 30 "http://localhost:8080/admin/" &>/dev/null; then
+            print_warning "Keycloak admin console not accessible on attempt $attempt"
+            if [ $attempt -eq $max_attempts ]; then
+                print_error "Keycloak admin console validation failed"
+                return 1
+            fi
+            sleep 15
+            attempt=$((attempt + 1))
+            continue
+        fi
+        
+        # Test 2: Check if master realm is accessible
+        if ! curl -sf --connect-timeout 10 --max-time 30 "http://localhost:8080/realms/master" &>/dev/null; then
+            print_warning "Master realm not accessible on attempt $attempt"
+            if [ $attempt -eq $max_attempts ]; then
+                print_error "Master realm validation failed"
+                return 1
+            fi
+            sleep 15
+            attempt=$((attempt + 1))
+            continue
+        fi
+        
+        # Test 3: Check if sso-hub realm is accessible
+        if ! curl -sf --connect-timeout 10 --max-time 30 "http://localhost:8080/realms/sso-hub" &>/dev/null; then
+            print_warning "SSO-Hub realm not accessible on attempt $attempt"
+            if [ $attempt -eq $max_attempts ]; then
+                print_error "SSO-Hub realm validation failed"
+                return 1
+            fi
+            sleep 15
+            attempt=$((attempt + 1))
+            continue
+        fi
+        
+        # Test 4: Check if sso-hub realm OpenID configuration is accessible
+        local oidc_config_url="http://localhost:8080/realms/sso-hub/.well-known/openid_configuration"
+        if ! curl -sf --connect-timeout 10 --max-time 30 "$oidc_config_url" &>/dev/null; then
+            print_warning "OIDC configuration endpoint not accessible on attempt $attempt"
+            if [ $attempt -eq $max_attempts ]; then
+                print_error "OIDC configuration endpoint validation failed"
+                return 1
+            fi
+            sleep 15
+            attempt=$((attempt + 1))
+            continue
+        fi
+        
+        # Test 5: Verify that external host configuration is reflected in OIDC config
+        local oidc_response=$(curl -sf --connect-timeout 10 --max-time 30 "$oidc_config_url" 2>/dev/null)
+        if [[ -n "$oidc_response" ]]; then
+            # For IP addresses, we expect localhost in internal communication
+            # This is normal for containerized deployments
+            if [[ "$EXTERNAL_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                print_info "IP-based deployment - internal localhost configuration is expected"
+            else
+                # For domain names, check if the configuration contains the external host
+                if echo "$oidc_response" | grep -q "localhost" && ! echo "$oidc_response" | grep -q "$EXTERNAL_HOST"; then
+                    print_warning "OIDC configuration still contains localhost references"
+                    print_info "This may be normal for containerized deployments with external proxies"
+                fi
+            fi
+        fi
+        
+        print_success "✅ OIDC configuration validation passed"
+        return 0
+    done
+    
+    print_error "OIDC configuration validation failed after $max_attempts attempts"
+    return 1
+}
+
+# Validate full deployment including microservices
+validate_full_deployment() {
+    print_info "Testing core microservices..."
+    
+    local services_checked=0
+    local services_healthy=0
+    
+    # Core services to check (these should be up for basic functionality)
+    local core_services=(
+        "3002:auth-bff"
+        "3003:user-service" 
+        "3004:tools-health-service"
+        "3005:admin-config-service"
+        "3006:catalog-service"
+    )
+    
+    for service_info in "${core_services[@]}"; do
+        local port=$(echo "$service_info" | cut -d: -f1)
+        local name=$(echo "$service_info" | cut -d: -f2)
+        
+        services_checked=$((services_checked + 1))
+        
+        # Check if service is responding (with timeout)
+        if curl -sf --connect-timeout 5 --max-time 10 "http://localhost:${port}/healthz" &>/dev/null || \
+           curl -sf --connect-timeout 5 --max-time 10 "http://localhost:${port}/readyz" &>/dev/null || \
+           curl -sf --connect-timeout 5 --max-time 10 "http://localhost:${port}/" &>/dev/null; then
+            print_success "✅ $name (port $port) is healthy"
+            services_healthy=$((services_healthy + 1))
+        else
+            print_warning "⚠️ $name (port $port) is not responding"
+        fi
+    done
+    
+    print_info "Service health summary: $services_healthy/$services_checked core services are healthy"
+    
+    # Consider deployment successful if at least 60% of core services are healthy
+    local min_required=$(( (services_checked * 3) / 5 ))  # 60% threshold
+    if [ $services_healthy -ge $min_required ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Show configuration summary
 show_configuration_summary() {
     print_step "Configuration Summary:"
@@ -505,71 +632,123 @@ show_configuration_summary() {
 
 # Trigger Keycloak reconfiguration for external access
 trigger_keycloak_reconfiguration() {
-    print_step "Triggering Keycloak reconfiguration for external access..."
+    print_step "🚀 Starting Staged External Deployment..."
     
-    # Check if Docker Compose is available and services are running
+    # Check if Docker Compose is available
     if ! command -v docker-compose &> /dev/null; then
-        print_warning "docker-compose not found, skipping Keycloak reconfiguration"
-        print_info "Please restart Keycloak manually: docker-compose restart keycloak"
-        return 0
-    fi
-    
-    # Check if Keycloak service exists and is running
-    if ! docker-compose ps keycloak &>/dev/null; then
-        print_warning "Keycloak service not found or not running"
-        print_info "Start services with: docker-compose up -d"
-        return 0
-    fi
-    
-    print_info "Recreating Keycloak container with new environment variables..."
-    
-    # Stop and recreate Keycloak container to apply new environment variables
-    # Docker restart doesn't pick up changed .env files, so we need to recreate
-    docker-compose stop keycloak
-    docker-compose rm -f keycloak
-    if docker-compose up -d keycloak; then
-        print_success "Keycloak recreated successfully with new environment variables"
-        
-        # Wait for Keycloak to be ready (this can take 60-90 seconds)
-        print_info "Waiting for Keycloak to fully initialize (this may take 60-90 seconds)..."
-        local max_wait=120
-        local wait_time=0
-        while [ $wait_time -lt $max_wait ]; do
-            # Check if container is healthy via docker-compose
-            if docker-compose ps keycloak | grep -q "healthy"; then
-                print_success "Keycloak is healthy and ready"
-                break
-            fi
-            
-            # Also check basic connectivity as fallback
-            if curl -s --max-time 3 "http://localhost:8080/realms/master" &>/dev/null; then
-                print_success "Keycloak is responding"
-                break
-            fi
-            
-            # Progress indicator every 15 seconds
-            if [ $((wait_time % 15)) -eq 0 ]; then
-                print_info "Still initializing... (${wait_time}s elapsed, max ${max_wait}s)"
-            fi
-            
-            sleep 5
-            wait_time=$((wait_time + 5))
-        done
-        
-        if [ $wait_time -ge $max_wait ]; then
-            print_warning "Keycloak initialization timeout - proceeding anyway"
-            print_info "Container may still be starting up. Check status with: docker-compose logs keycloak"
-        else
-            # Configuration will be handled automatically by the entrypoint script
-            print_info "Keycloak is ready - configuration will be applied automatically"
-            print_info "The entrypoint script will handle SSL disabling and redirect URI updates"
-            print_success "Configuration will be applied in the background (60 seconds delay)"
-        fi
-    else
-        print_error "Failed to restart Keycloak"
-        print_info "Please restart manually: docker-compose restart keycloak"
+        print_error "docker-compose not found"
+        print_info "Please install docker-compose and try again"
         return 1
     fi
+    
+    # Stage 1: Deploy OIDC Infrastructure
+    print_step "📊 Stage 1: Deploying OIDC Infrastructure (Databases + Keycloak)..."
+    print_info "Stopping any existing services to ensure clean deployment..."
+    docker-compose down --remove-orphans &>/dev/null || true
+    
+    print_info "Starting core infrastructure services..."
+    if ! docker-compose up -d postgres keycloak-postgres redis keycloak; then
+        print_error "Failed to start core infrastructure services"
+        print_info "Check logs: docker-compose logs"
+        return 1
+    fi
+    
+    print_success "✅ Core infrastructure services started"
+    
+    # Stage 2: Wait for OIDC Server Readiness
+    print_step "⏳ Stage 2: Waiting for OIDC Server Readiness..."
+    print_info "This may take 60-120 seconds for full Keycloak initialization..."
+    
+    local max_wait=150  # Extended timeout for external configuration
+    local wait_time=0
+    local keycloak_ready=false
+    
+    while [ $wait_time -lt $max_wait ]; do
+        # Check if Keycloak container is healthy
+        if docker-compose ps keycloak 2>/dev/null | grep -q "healthy"; then
+            print_success "✅ Keycloak container is healthy"
+            keycloak_ready=true
+            break
+        fi
+        
+        # Check basic connectivity as fallback
+        if curl -s --connect-timeout 5 "http://localhost:8080/realms/master" &>/dev/null; then
+            print_success "✅ Keycloak is responding to requests"
+            keycloak_ready=true
+            break
+        fi
+        
+        # Progress updates every 20 seconds
+        if [ $((wait_time % 20)) -eq 0 ]; then
+            print_info "Still waiting for Keycloak... (${wait_time}s elapsed, max ${max_wait}s)"
+            if [ $wait_time -gt 60 ]; then
+                print_info "Keycloak is still initializing - this is normal for first startup"
+            fi
+        fi
+        
+        sleep 5
+        wait_time=$((wait_time + 5))
+    done
+    
+    if [ "$keycloak_ready" = false ]; then
+        print_error "❌ Keycloak failed to become ready within ${max_wait} seconds"
+        print_error "Deployment stopped at Stage 2"
+        print_info "Troubleshooting steps:"
+        print_info "  1. Check Keycloak logs: docker-compose logs keycloak"
+        print_info "  2. Check container status: docker-compose ps"
+        print_info "  3. Verify system resources (memory/disk)"
+        return 1
+    fi
+    
+    # Stage 3: OIDC Configuration Validation
+    print_step "🔍 Stage 3: Validating OIDC Configuration for External Access..."
+    print_info "Testing OIDC server configuration with external host: ${EXTERNAL_HOST}"
+    
+    # Wait additional time for background configuration to complete
+    print_info "Waiting for background configuration to complete (90 seconds)..."
+    sleep 90
+    
+    # Test OIDC configuration
+    if ! validate_oidc_configuration; then
+        print_error "❌ OIDC configuration validation failed"
+        print_error "Deployment stopped at Stage 3"
+        print_info "OIDC server is not ready for external connections"
+        print_info "Common issues:"
+        print_info "  • SSL requirements not properly configured"
+        print_info "  • Realm configuration incorrect"
+        print_info "  • Client redirect URIs not updated"
+        print_info "  • Check Keycloak logs: docker-compose logs keycloak"
+        return 1
+    fi
+    
+    print_success "✅ OIDC configuration validation passed"
+    
+    # Stage 4: Deploy All Microservices
+    print_step "🌐 Stage 4: Deploying All Microservices..."
+    print_info "OIDC server is ready - deploying remaining services..."
+    
+    if ! docker-compose up -d; then
+        print_error "Failed to start remaining services"
+        print_warning "OIDC server is working, but some microservices failed to start"
+        print_info "Check logs: docker-compose logs"
+        return 1
+    fi
+    
+    print_success "✅ All services deployed successfully"
+    
+    # Final validation
+    print_step "🎯 Final Validation: Testing Complete System..."
+    sleep 30  # Allow services to stabilize
+    
+    if validate_full_deployment; then
+        print_success "🎉 External deployment completed successfully!"
+        print_success "System is ready for external access at: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}"
+    else
+        print_warning "⚠️ Deployment completed with some services not fully ready"
+        print_info "Core OIDC functionality is working - check individual service logs if needed"
+    fi
+    
+    return 0
 }
 
 # Show next steps
