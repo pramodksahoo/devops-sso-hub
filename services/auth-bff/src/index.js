@@ -7,28 +7,91 @@
 const fastify = require('fastify');
 const { Issuer, generators } = require('openid-client');
 
+// Dynamic configuration builder - supports external deployments
+function buildDynamicConfig() {
+  const externalHost = process.env.EXTERNAL_HOST || 'localhost';
+  const externalProtocol = process.env.EXTERNAL_PROTOCOL || 'http';
+  const externalPort = process.env.EXTERNAL_PORT || '';
+  
+  // Check if this is an external deployment (not localhost)
+  const isExternalDeployment = externalHost !== 'localhost';
+  
+  console.log('🔧 Building dynamic configuration:', {
+    external_host: externalHost,
+    external_protocol: externalProtocol, 
+    external_port: externalPort,
+    is_external: isExternalDeployment
+  });
+  
+  // Build URLs dynamically based on external configuration
+  const frontendUrl = isExternalDeployment 
+    ? `${externalProtocol}://${externalHost}${externalPort ? `:${externalPort}` : ''}`
+    : 'http://localhost:3000';
+    
+  const keycloakPublicUrl = isExternalDeployment
+    ? `${externalProtocol}://${externalHost}:8080`
+    : 'http://localhost:8080';
+    
+  const authBffUrl = isExternalDeployment
+    ? `${externalProtocol}://${externalHost}:3002`
+    : 'http://localhost:3002';
+  
+  console.log('🔧 Computed URLs:', {
+    frontend_url: frontendUrl,
+    keycloak_public_url: keycloakPublicUrl,
+    auth_bff_url: authBffUrl
+  });
+  
+  // Build CORS origins dynamically
+  const corsOrigins = [
+    // Always allow localhost for development
+    'http://localhost:3000',
+    'http://localhost:3002',
+    'http://127.0.0.1:3000'
+  ];
+  
+  if (isExternalDeployment) {
+    corsOrigins.push(frontendUrl);
+    corsOrigins.push(authBffUrl);
+    // Add alternative port access patterns
+    corsOrigins.push(`${externalProtocol}://${externalHost}:3000`);
+  }
+  
+  return {
+    PORT: process.env.PORT || 3002,
+    HOST: process.env.HOST || '0.0.0.0',
+    
+    // Dynamic URLs based on external configuration
+    FRONTEND_URL: frontendUrl,
+    KEYCLOAK_PUBLIC_URL: keycloakPublicUrl,
+    AUTH_BFF_URL: authBffUrl,
+    
+    // OIDC Configuration - Dynamic
+    OIDC_ISSUER: isExternalDeployment 
+      ? `${keycloakPublicUrl}/realms/sso-hub`
+      : 'http://keycloak:8080/realms/sso-hub', // Internal for localhost
+    OIDC_PUBLIC_URL: `${keycloakPublicUrl}/realms/sso-hub`,
+    OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID || 'sso-hub-client',
+    OIDC_CLIENT_SECRET: process.env.OIDC_CLIENT_SECRET || 'your-client-secret',
+    OIDC_REDIRECT_URI: `${authBffUrl}/auth/callback`,
+    
+    // Security
+    SESSION_SECRET: process.env.SESSION_SECRET || 'super-secret-session-key-for-development',
+    
+    // CORS Configuration - Dynamic
+    CORS_ORIGIN: corsOrigins,
+    
+    // Session Configuration
+    SESSION_MAX_AGE: 24 * 60 * 60 * 1000, // 24 hours
+    
+    // Helper flags
+    IS_EXTERNAL_DEPLOYMENT: isExternalDeployment,
+    IS_HTTPS: externalProtocol === 'https'
+  };
+}
+
 // Initialize configuration
-const config = {
-  PORT: process.env.PORT || 3002,
-  HOST: process.env.HOST || '0.0.0.0',
-  
-  // OIDC Configuration - Environment aware
-  OIDC_ISSUER: process.env.OIDC_ISSUER || 'http://keycloak:8080/realms/sso-hub',
-  OIDC_PUBLIC_URL: process.env.KEYCLOAK_PUBLIC_URL || process.env.OIDC_ISSUER || 'http://localhost:8080/realms/sso-hub',
-  OIDC_CLIENT_ID: process.env.OIDC_CLIENT_ID || 'sso-hub-client',
-  OIDC_CLIENT_SECRET: process.env.OIDC_CLIENT_SECRET || 'your-client-secret',
-  OIDC_REDIRECT_URI: process.env.OIDC_REDIRECT_URI || 'http://localhost:3002/auth/callback',
-  
-  // Security
-  SESSION_SECRET: process.env.SESSION_SECRET || 'super-secret-session-key-for-development',
-  
-  // Frontend
-  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:3000',
-  CORS_ORIGIN: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'http://localhost:3002'],
-  
-  // Session Configuration
-  SESSION_MAX_AGE: 24 * 60 * 60 * 1000, // 24 hours
-};
+const config = buildDynamicConfig();
 
 // Initialize Fastify with disabled logger
 const server = fastify({
@@ -57,20 +120,20 @@ async function initializeOIDC() {
     console.log('🔧 Public URL (for browser endpoints):', publicUrl);
     console.log('🔧 Internal URL (for server endpoints):', internalBaseUrl);
     
+    // CRITICAL FIX: Issuer must match what Keycloak returns in tokens
+    // Keycloak returns issuer based on the authorization_endpoint URL
+    const expectedIssuer = `${publicUrl}/realms/sso-hub`;
+    console.log('🔧 Expected issuer (must match Keycloak tokens):', expectedIssuer);
+    
     const issuer = new Issuer({
-      // For token validation: Use the same issuer that Keycloak will return in tokens
-      // Since authorization_endpoint determines Keycloak's issuer, match it
-      issuer: isExternalDeployment ? config.OIDC_ISSUER : 'http://localhost:8080/realms/sso-hub',
+      // FIXED: Use public URL for issuer to match what Keycloak returns
+      issuer: expectedIssuer,
       
-      // Browser-facing endpoints: Use public URL for external, public URL for localhost too
-      authorization_endpoint: isExternalDeployment 
-        ? `${publicUrl}/realms/sso-hub/protocol/openid-connect/auth`
-        : `${publicUrl}/realms/sso-hub/protocol/openid-connect/auth`,
-      end_session_endpoint: isExternalDeployment
-        ? `${publicUrl}/realms/sso-hub/protocol/openid-connect/logout`
-        : `${publicUrl}/realms/sso-hub/protocol/openid-connect/logout`,
+      // Browser-facing endpoints: Use public URL 
+      authorization_endpoint: `${publicUrl}/realms/sso-hub/protocol/openid-connect/auth`,
+      end_session_endpoint: `${publicUrl}/realms/sso-hub/protocol/openid-connect/logout`,
         
-      // Server-side endpoints: Always use internal URLs for container communication
+      // Server-side endpoints: Use internal URLs for container communication  
       token_endpoint: `${internalBaseUrl}/realms/sso-hub/protocol/openid-connect/token`,
       userinfo_endpoint: `${internalBaseUrl}/realms/sso-hub/protocol/openid-connect/userinfo`,
       jwks_uri: `${internalBaseUrl}/realms/sso-hub/protocol/openid-connect/certs`,
@@ -83,6 +146,11 @@ async function initializeOIDC() {
     console.log('🔧 Token endpoint (server):', issuer.token_endpoint);
     console.log('🔧 Userinfo endpoint (server):', issuer.userinfo_endpoint);
     console.log('🔧 JWKS URI (server):', issuer.jwks_uri);
+    
+    console.log('⚠️  ISSUER MISMATCH CHECK:');
+    console.log('   Expected issuer in tokens: ', issuer.issuer);
+    console.log('   Keycloak will return issuer based on auth endpoint:', issuer.authorization_endpoint.replace('/protocol/openid-connect/auth', ''));
+    console.log('   Match?', issuer.issuer === issuer.authorization_endpoint.replace('/protocol/openid-connect/auth', ''));
     
     oidcClient = new issuer.Client({
       client_id: config.OIDC_CLIENT_ID,
@@ -106,20 +174,28 @@ async function initializeOIDC() {
 // Server setup with proper plugin registration
 async function setupServer() {
   try {
-    // 1. CORS Configuration - Fixed for proper origin handling
+    // 1. CORS Configuration - Environment-aware for external deployments
     await server.register(require('@fastify/cors'), {
       origin: (origin, callback) => {
-        // Allow requests from the frontend and localhost variants
-        const allowedOrigins = ['http://localhost:3000', 'http://localhost:3002', 'http://127.0.0.1:3000'];
+        // Use dynamically built CORS origins
+        const allowedOrigins = config.CORS_ORIGIN;
+        
+        console.log('🔧 Dynamic CORS configuration:', {
+          external_deployment: config.IS_EXTERNAL_DEPLOYMENT,
+          frontend_url: config.FRONTEND_URL,
+          allowed_origins: allowedOrigins
+        });
         
         // Allow requests with no origin (like Postman, curl)
         if (!origin) return callback(null, true);
         
         if (allowedOrigins.includes(origin)) {
+          console.log(`✅ CORS allowed origin: ${origin}`);
           return callback(null, true);
         }
         
         console.log(`❌ CORS blocked origin: ${origin}`);
+        console.log(`❌ Allowed origins: ${allowedOrigins.join(', ')}`);
         return callback(new Error('Not allowed by CORS'), false);
       },
       credentials: true,
@@ -296,12 +372,22 @@ server.get('/auth/login', async (request, reply) => {
       }
     }, { expiresIn: '10m' }); // 10 minutes for auth flow
     
-    reply.setCookie('auth-state', authStateToken, {
+    // Dynamic cookie configuration based on deployment environment
+    const cookieOptions = {
       httpOnly: true,
-      secure: false,
+      secure: config.IS_HTTPS, // true for HTTPS, false for HTTP
       sameSite: 'lax',
-      maxAge: 600000 // 10 minutes
+      maxAge: 600000, // 10 minutes
+      path: '/'
+    };
+    
+    console.log('🍪 Setting auth-state cookie with options:', {
+      is_https: config.IS_HTTPS,
+      is_external: config.IS_EXTERNAL_DEPLOYMENT,
+      cookie_options: cookieOptions
     });
+    
+    reply.setCookie('auth-state', authStateToken, cookieOptions);
     
     // FIXED: Use only valid scopes that Keycloak supports
     const authUrl = oidcClient.authorizationUrl({
@@ -334,12 +420,22 @@ server.get('/auth/callback', async (request, reply) => {
     
     const params = oidcClient.callbackParams(request.raw);
     
+    // Debug: Log all cookies received
+    console.log('🍪 Callback received cookies:', {
+      all_cookies: Object.keys(request.cookies || {}),
+      cookie_count: Object.keys(request.cookies || {}).length,
+      has_auth_state: 'auth-state' in (request.cookies || {})
+    });
+    
     // Retrieve auth state from JWT cookie
     const authStateToken = request.cookies['auth-state'];
     if (!authStateToken) {
-      console.error('❌ No auth state token found');
+      console.error('❌ No auth state token found in callback');
+      console.error('❌ Available cookies:', Object.keys(request.cookies || {}));
       return reply.status(400).send({ error: 'Invalid authentication state' });
     }
+    
+    console.log('✅ Auth state token found, validating JWT...');
     
     let authState;
     try {
@@ -360,6 +456,7 @@ server.get('/auth/callback', async (request, reply) => {
     console.log('🔄 Exchanging authorization code for tokens...');
     console.log('🔗 Using redirect URI:', config.OIDC_REDIRECT_URI);
     console.log('🔗 Client token endpoint should be:', oidcClient.issuer.token_endpoint);
+    console.log('🔗 Expected issuer in token:', oidcClient.issuer.issuer);
     
     const tokenSet = await oidcClient.callback(
       config.OIDC_REDIRECT_URI,
@@ -373,8 +470,13 @@ server.get('/auth/callback', async (request, reply) => {
     
     console.log('✅ Token exchange successful!');
     
-    // Extract user info from ID token
+    // Verify the issuer in the received token
     const idTokenClaims = tokenSet.claims();
+    console.log('🔍 Token issuer verification:', {
+      expected_issuer: oidcClient.issuer.issuer,
+      received_issuer: idTokenClaims.iss,
+      issuer_match: idTokenClaims.iss === oidcClient.issuer.issuer
+    });
     console.log('✅ ID token claims received:', Object.keys(idTokenClaims));
     
     // Create user object
@@ -415,17 +517,23 @@ server.get('/auth/callback', async (request, reply) => {
       exp: Math.floor((Date.now() + config.SESSION_MAX_AGE) / 1000)
     });
     
-    // Set secure HTTP-only cookie with JWT token
+    // Set secure HTTP-only cookie with JWT token - Dynamic configuration
+    console.log('🍪 Setting JWT cookie for environment:', {
+      frontend_url: config.FRONTEND_URL,
+      is_external: config.IS_EXTERNAL_DEPLOYMENT,
+      is_https: config.IS_HTTPS
+    });
+    
     reply.setCookie('sso-hub-token', authToken, {
       httpOnly: true,
-      secure: false, // false for localhost development
+      secure: config.IS_HTTPS, // Dynamic based on protocol
       sameSite: 'lax',
       maxAge: config.SESSION_MAX_AGE,
       path: '/'
     });
     
-    // Clear auth state cookie
-    reply.clearCookie('auth-state');
+    // Clear auth state cookie with same configuration used to set it
+    reply.clearCookie('auth-state', { path: '/' });
     
     console.log('✅ JWT authentication token created successfully');
     console.log('🔄 Redirecting to dashboard');
@@ -493,9 +601,17 @@ server.post('/auth/logout', async (request, reply) => {
       }
     }
     
-    // Clear JWT authentication cookies
-    reply.clearCookie('sso-hub-token', { path: '/' });
-    reply.clearCookie('auth-state', { path: '/' });
+    // Clear JWT authentication cookies with dynamic configuration
+    reply.clearCookie('sso-hub-token', { 
+      path: '/',
+      secure: config.IS_HTTPS, // Match the secure flag used when setting the cookie
+      sameSite: 'lax'
+    });
+    reply.clearCookie('auth-state', { 
+      path: '/',
+      secure: config.IS_HTTPS,
+      sameSite: 'lax'
+    });
     
     console.log('✅ JWT tokens cleared successfully');
     return { message: 'Logged out successfully' };

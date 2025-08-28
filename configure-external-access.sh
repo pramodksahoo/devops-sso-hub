@@ -437,11 +437,15 @@ restart_containers_for_external_config() {
     # Only restart containers that need environment variable updates
     print_info "Recreating auth-bff and nginx with new environment variables..."
     
-    # Force recreate auth-bff to pick up new OIDC_ISSUER and KEYCLOAK_PUBLIC_URL
-    docker-compose up -d auth-bff --force-recreate
+    # Force recreate containers with updated environment variables
+    # This ensures containers pick up new EXTERNAL_HOST, EXTERNAL_PROTOCOL, and other config
+    print_info "Restarting auth-bff with external configuration..."
+    EXTERNAL_HOST="$EXTERNAL_HOST" EXTERNAL_PROTOCOL="$EXTERNAL_PROTOCOL" EXTERNAL_PORT="$EXTERNAL_PORT" \
+        docker-compose up -d auth-bff --force-recreate
     sleep 10
     
-    # Force recreate nginx to pick up new KEYCLOAK_PUBLIC_URL in templates
+    # Force recreate nginx to pick up new KEYCLOAK_PUBLIC_URL in templates  
+    print_info "Restarting nginx with external configuration..."
     docker-compose up -d nginx --force-recreate
     sleep 10
     
@@ -1126,11 +1130,13 @@ main() {
     sleep 5
     
     print_info "Starting Keycloak with external configuration..."
-    docker-compose up -d keycloak
+    EXTERNAL_HOST="$EXTERNAL_HOST" EXTERNAL_PROTOCOL="$EXTERNAL_PROTOCOL" EXTERNAL_PORT="$EXTERNAL_PORT" \
+        docker-compose up -d keycloak
     sleep 30
     
     print_info "Starting auth-bff with updated OIDC configuration..."
-    docker-compose up -d auth-bff
+    EXTERNAL_HOST="$EXTERNAL_HOST" EXTERNAL_PROTOCOL="$EXTERNAL_PROTOCOL" EXTERNAL_PORT="$EXTERNAL_PORT" \
+        docker-compose up -d auth-bff
     sleep 10
     
     print_success "✅ Services restarted with external configuration"

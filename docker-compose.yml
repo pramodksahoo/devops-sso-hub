@@ -136,6 +136,11 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       NODE_ENV: ${NODE_ENV:-production}
       
+      # Dynamic External Configuration (used by configure-external-access.sh)
+      EXTERNAL_HOST: ${EXTERNAL_HOST:-localhost}
+      EXTERNAL_PROTOCOL: ${EXTERNAL_PROTOCOL:-http}
+      EXTERNAL_PORT: ${EXTERNAL_PORT:-}
+      
       # OIDC Configuration
       OIDC_ISSUER: ${OIDC_ISSUER:-http://keycloak:8080/realms/sso-hub}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-sso-hub-client}
