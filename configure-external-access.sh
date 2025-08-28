@@ -406,6 +406,7 @@ update_env_config() {
         -e "s|^CORS_ORIGIN=.*|CORS_ORIGIN=$FULL_FRONTEND_URL|" \
         -e "s|^KC_HOSTNAME=.*|KC_HOSTNAME=$EXTERNAL_HOST|" \
         -e "s|^KEYCLOAK_PUBLIC_URL=.*|KEYCLOAK_PUBLIC_URL=$FULL_KEYCLOAK_URL/realms/sso-hub|" \
+        -e "s|^OIDC_DISCOVERY_URL=.*|OIDC_DISCOVERY_URL=$FULL_KEYCLOAK_URL/realms/sso-hub/.well-known/openid_configuration|" \
         -e "s|^OIDC_REDIRECT_URI=.*|OIDC_REDIRECT_URI=$FULL_AUTH_BFF_URL/auth/callback|" \
         .env
     
@@ -478,11 +479,12 @@ validate_oidc_configuration() {
     while [ $attempt -le $max_attempts ]; do
         print_info "Validation attempt $attempt/$max_attempts..."
         
-        # Test 1: Check if Keycloak admin console is accessible
-        if ! curl -sf --connect-timeout 10 --max-time 30 "http://localhost:8080/admin/" &>/dev/null; then
-            print_warning "Keycloak admin console not accessible on attempt $attempt"
+        # Test 1: Check if Keycloak admin console is accessible externally
+        local external_admin_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/admin/"
+        if ! curl -sf --connect-timeout 10 --max-time 30 "$external_admin_url" &>/dev/null; then
+            print_warning "External Keycloak admin console not accessible on attempt $attempt"
             if [ $attempt -eq $max_attempts ]; then
-                print_error "Keycloak admin console validation failed"
+                print_error "External Keycloak admin console validation failed"
                 return 1
             fi
             sleep 15
@@ -490,11 +492,12 @@ validate_oidc_configuration() {
             continue
         fi
         
-        # Test 2: Check if master realm is accessible
-        if ! curl -sf --connect-timeout 10 --max-time 30 "http://localhost:8080/realms/master" &>/dev/null; then
-            print_warning "Master realm not accessible on attempt $attempt"
+        # Test 2: Check if master realm is accessible externally
+        local external_master_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/master"
+        if ! curl -sf --connect-timeout 10 --max-time 30 "$external_master_url" &>/dev/null; then
+            print_warning "External master realm not accessible on attempt $attempt"
             if [ $attempt -eq $max_attempts ]; then
-                print_error "Master realm validation failed"
+                print_error "External master realm validation failed"
                 return 1
             fi
             sleep 15
@@ -502,11 +505,12 @@ validate_oidc_configuration() {
             continue
         fi
         
-        # Test 3: Check if sso-hub realm is accessible
-        if ! curl -sf --connect-timeout 10 --max-time 30 "http://localhost:8080/realms/sso-hub" &>/dev/null; then
-            print_warning "SSO-Hub realm not accessible on attempt $attempt"
+        # Test 3: Check if sso-hub realm is accessible externally
+        local external_realm_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/sso-hub"
+        if ! curl -sf --connect-timeout 10 --max-time 30 "$external_realm_url" &>/dev/null; then
+            print_warning "External SSO-Hub realm not accessible on attempt $attempt"
             if [ $attempt -eq $max_attempts ]; then
-                print_error "SSO-Hub realm validation failed"
+                print_error "External SSO-Hub realm validation failed"
                 return 1
             fi
             sleep 15
@@ -514,10 +518,11 @@ validate_oidc_configuration() {
             continue
         fi
         
-        # Test 4: Check if sso-hub realm OpenID configuration is accessible
-        local oidc_config_url="http://localhost:8080/realms/sso-hub/.well-known/openid_configuration"
+        # Test 4: Check if sso-hub realm OpenID configuration is accessible externally
+        local oidc_config_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/sso-hub/.well-known/openid_configuration"
+        print_info "Testing OIDC discovery endpoint: $oidc_config_url"
         if ! curl -sf --connect-timeout 10 --max-time 30 "$oidc_config_url" &>/dev/null; then
-            print_warning "OIDC configuration endpoint not accessible on attempt $attempt"
+            print_warning "OIDC configuration endpoint not accessible on attempt $attempt: $oidc_config_url"
             if [ $attempt -eq $max_attempts ]; then
                 print_error "OIDC configuration endpoint validation failed"
                 return 1
@@ -610,6 +615,7 @@ show_configuration_summary() {
     echo -e "  • Auth BFF:      ${GREEN}$FULL_AUTH_BFF_URL${NC}"
     echo -e "  • API Docs:      ${GREEN}${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3006/docs${NC}"
     echo -e "  • Health:        ${GREEN}${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3004${NC}"
+    echo -e "  • OIDC Discovery:${GREEN}$FULL_KEYCLOAK_URL/realms/sso-hub/.well-known/openid_configuration${NC}"
     echo ""
     
     echo -e "${CYAN}🔧 Configuration:${NC}"
