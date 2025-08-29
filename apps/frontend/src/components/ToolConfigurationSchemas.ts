@@ -2,7 +2,7 @@
 export interface BaseConfigField {
   name: string;
   label: string;
-  type: 'text' | 'password' | 'url' | 'textarea' | 'select' | 'checkbox';
+  type: 'text' | 'password' | 'url' | 'textarea' | 'select' | 'checkbox' | 'email' | 'number';
   required: boolean;
   placeholder?: string;
   description?: string;
@@ -352,319 +352,475 @@ const customSchema: ToolConfigSchema = {
   ]
 };
 
-// Tool-specific schema overrides
-export const toolSpecificSchemas: Record<string, Partial<ToolConfigSchema>> = {
+// Enhanced tool-specific schema definitions with nested object support
+export const toolSpecificSchemas: Record<string, Record<string, ToolConfigSchema>> = {
   'grafana': {
-    fields: [
-      {
-        name: 'enabled',
-        label: 'Enable OAuth Integration',
-        type: 'checkbox',
-        required: false,
-        description: 'Enable OAuth2 authentication for Grafana'
-      },
-      {
-        name: 'grafana_url',
-        label: 'Grafana URL (Root URL)',
-        type: 'url',
-        required: true,
-        placeholder: 'http://localhost:3100',
-        description: 'The base URL of your Grafana instance'
-      },
-      {
-        name: 'client_id',
-        label: 'OAuth Client ID',
-        type: 'text',
-        required: true,
-        placeholder: 'grafana-client-oauth2 (auto-generated)',
-        description: 'System-generated OAuth Client ID. Uses pattern: {tool-name}-client-{protocol}',
-        sensitive: false,
-        readonly: true
-      },
-      {
-        name: 'client_secret',
-        label: 'OAuth Client Secret',
-        type: 'password',
-        required: true,
-        placeholder: 'Enter your Client Secret',
-        description: 'OAuth Client Secret from Keycloak',
-        sensitive: true
-      },
-      {
-        name: 'client_protocol',
-        label: 'Client Protocol',
-        type: 'select',
-        required: false,
-        options: [
-          { label: 'openid-connect', value: 'openid-connect' },
-          { label: 'saml', value: 'saml' }
-        ],
-        description: 'OAuth protocol type (usually openid-connect)'
-      },
-      {
-        name: 'access_type',
-        label: 'Access Type',
-        type: 'select',
-        required: false,
-        options: [
-          { label: 'confidential', value: 'confidential' },
-          { label: 'public', value: 'public' }
-        ],
-        description: 'OAuth access type (confidential for server-side apps)'
-      },
-      {
-        name: 'standard_flow_enabled',
-        label: 'Standard Flow Enabled',
-        type: 'checkbox',
-        required: false,
-        description: 'Enable OAuth2 Authorization Code flow'
-      },
-      {
-        name: 'implicit_flow_enabled',
-        label: 'Implicit Flow Enabled',
-        type: 'checkbox',
-        required: false,
-        description: 'Enable OAuth2 Implicit flow (not recommended)'
-      },
-      {
-        name: 'direct_access_grants_enabled',
-        label: 'Direct Access Grants Enabled',
-        type: 'checkbox',
-        required: false,
-        description: 'Enable Resource Owner Password Credentials flow'
-      },
-      {
-        name: 'auth_url',
-        label: 'Authorization URL (Auto-generated)',
-        type: 'url',
-        required: false,
-        placeholder: 'http://localhost:8080/realms/sso-hub/protocol/openid-connect/auth',
-        description: 'Keycloak OAuth authorization endpoint URL (auto-generated from system settings)'
-      },
-      {
-        name: 'token_url',
-        label: 'Token URL (Auto-generated)',
-        type: 'url',
-        required: false,
-        placeholder: 'http://localhost:8080/realms/sso-hub/protocol/openid-connect/token',
-        description: 'Keycloak OAuth token endpoint URL (auto-generated from system settings)'
-      },
-      {
-        name: 'api_url',
-        label: 'API URL - User Info (Auto-generated)',
-        type: 'url',
-        required: false,
-        placeholder: 'http://localhost:8080/realms/sso-hub/protocol/openid-connect/userinfo',
-        description: 'Keycloak OAuth userinfo API endpoint URL (auto-generated from system settings)'
-      },
-      {
-        name: 'redirect_uri',
-        label: 'Valid Redirect URIs',
-        type: 'text',
-        required: true,
-        placeholder: 'http://localhost:3100/login/generic_oauth',
-        description: 'The callback URL to be registered in Keycloak (must match Grafana OAuth callback)'
-      },
-      {
-        name: 'web_origins',
-        label: 'Web Origins',
-        type: 'text',
-        required: false,
-        placeholder: 'http://localhost:3100',
-        description: 'Allowed web origins for CORS (usually the Grafana URL)'
-      },
-      {
-        name: 'admin_url',
-        label: 'Admin URL',
-        type: 'url',
-        required: false,
-        placeholder: 'http://localhost:3100',
-        description: 'Admin URL for the client (usually the Grafana base URL)'
-      },
-      {
-        name: 'base_url',
-        label: 'Base URL',
-        type: 'url',
-        required: false,
-        placeholder: 'http://localhost:3100',
-        description: 'Base URL for the client (usually the Grafana base URL)'
-      },
-      {
-        name: 'scopes',
-        label: 'OAuth Scopes (email, offline_access, profile, roles)',
-        type: 'text',
-        required: true,
-        placeholder: 'openid email profile offline_access roles',
-        description: 'Space-separated list of OAuth scopes to request'
-      },
-      {
-        name: 'use_refresh_token',
-        label: 'Use Refresh Token',
-        type: 'checkbox',
-        required: false,
-        description: 'Enable refresh token to maintain user sessions'
-      },
-      {
-        name: 'allow_sign_up',
-        label: 'Allow Sign Up',
-        type: 'checkbox',
-        required: false,
-        description: 'Allow new users to sign up through OAuth (creates Grafana user on first login)'
-      },
-      {
-        name: 'signout_redirect_url',
-        label: 'Sign Out Redirect URL',
-        type: 'url',
-        required: false,
-        placeholder: 'http://localhost:8080/realms/sso-hub/protocol/openid-connect/logout',
-        description: 'URL to redirect after logout (for single logout support)'
-      }
-    ],
-    setup_instructions: [
-      'Configure OAuth in Grafana configuration file (grafana.ini or via environment variables)',
-      'Set [auth.generic_oauth] enabled = true and configure all OAuth settings',
-      'OAuth client will be automatically created in Keycloak with ID: grafana-client-oauth2',
-      'Set Valid Redirect URIs in Keycloak to: http://localhost:3100/login/generic_oauth',
-      'The Client ID is automatically generated using pattern: {tool-name}-client-{protocol}',
-      'Click "Auto-populate from Keycloak" to fill most fields automatically',
-      'Manually enter the Redirect URI: http://localhost:3100/login/generic_oauth',
-      'Test the connection using the Test Connection button',
-      'Save the configuration - this will sync to both database and Keycloak',
-      'Verify user login through SSO and role assignments'
-    ]
+    'oauth2': {
+      integration_type: 'oauth2',
+      display_name: 'Grafana OAuth2 Integration',
+      description: 'Configure Grafana with OAuth2 authentication via Keycloak',
+      fields: [
+        // Core Grafana Settings
+        {
+          name: 'grafana_url',
+          label: 'Grafana URL (Root URL)',
+          type: 'url',
+          required: true,
+          placeholder: 'http://localhost:3100',
+          description: 'The base URL of your Grafana instance'
+        },
+        
+        // OAuth Configuration Section
+        {
+          name: 'oauth.enabled',
+          label: 'Enable OAuth Integration',
+          type: 'checkbox',
+          required: false,
+          description: 'Enable OAuth2 authentication for Grafana'
+        },
+        {
+          name: 'oauth.client_id',
+          label: 'OAuth Client ID',
+          type: 'text',
+          required: true,
+          placeholder: 'grafana-client-oauth2 (auto-generated)',
+          description: 'System-generated OAuth Client ID',
+          readonly: true
+        },
+        {
+          name: 'oauth.client_secret',
+          label: 'OAuth Client Secret',
+          type: 'password',
+          required: true,
+          placeholder: 'Enter your Client Secret',
+          description: 'OAuth Client Secret from Keycloak',
+          sensitive: true
+        },
+        {
+          name: 'oauth.auth_url',
+          label: 'Authorization URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:8080/realms/sso-hub/protocol/openid-connect/auth',
+          description: 'OAuth authorization endpoint (auto-generated)',
+          readonly: true
+        },
+        {
+          name: 'oauth.token_url',
+          label: 'Token URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:8080/realms/sso-hub/protocol/openid-connect/token',
+          description: 'OAuth token endpoint (auto-generated)',
+          readonly: true
+        },
+        {
+          name: 'oauth.api_url',
+          label: 'User Info URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:8080/realms/sso-hub/protocol/openid-connect/userinfo',
+          description: 'OAuth userinfo endpoint (auto-generated)',
+          readonly: true
+        },
+        {
+          name: 'oauth.scopes',
+          label: 'OAuth Scopes',
+          type: 'text',
+          required: false,
+          placeholder: 'openid email profile offline_access roles',
+          description: 'Space-separated OAuth scopes with default values: openid email profile offline_access roles'
+        },
+        {
+          name: 'oauth.allow_sign_up',
+          label: 'Allow Sign Up',
+          type: 'checkbox',
+          required: false,
+          description: 'Allow automatic user registration'
+        },
+        
+        // Keycloak Client Configuration Section (Root URL handled by Grafana URL)
+        {
+          name: 'keycloak.home_url',
+          label: 'Home URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:3100',
+          description: 'Keycloak client home URL - syncs bidirectionally with Keycloak'
+        },
+        {
+          name: 'keycloak.redirect_uris',
+          label: 'Valid Redirect URIs',
+          type: 'textarea',
+          required: false,
+          placeholder: 'http://localhost:3100/login/generic_oauth\nhttp://localhost:3100/auth/callback',
+          description: 'One redirect URI per line - syncs bidirectionally with Keycloak'
+        },
+        {
+          name: 'keycloak.web_origins',
+          label: 'Web Origins',
+          type: 'textarea',
+          required: false,
+          placeholder: 'http://localhost:3100\nhttp://grafana.company.com',
+          description: 'One web origin per line - syncs bidirectionally with Keycloak'
+        },
+        
+        
+        // Organization Management Section
+        {
+          name: 'org_management.enabled',
+          label: 'Enable Organization Management',
+          type: 'checkbox',
+          required: false,
+          description: 'Enable automatic organization assignment'
+        },
+        {
+          name: 'org_management.auto_assign_org',
+          label: 'Auto Assign Organization',
+          type: 'checkbox',
+          required: false,
+          description: 'Automatically assign users to organization'
+        },
+        {
+          name: 'org_management.auto_assign_org_role',
+          label: 'Default Organization Role',
+          type: 'select',
+          required: false,
+          options: [
+            { label: 'Viewer', value: 'Viewer' },
+            { label: 'Editor', value: 'Editor' },
+            { label: 'Admin', value: 'Admin' }
+          ],
+          description: 'Default role for new users'
+        }
+      ],
+      setup_instructions: [
+        'Configure your Keycloak realm with the sso-hub settings',
+        'The OAuth2 client will be automatically created in Keycloak',
+        'Update your Grafana configuration with the OAuth settings',
+        'Test the authentication flow'
+      ]
+    }
   },
+  
   'jenkins': {
-    fields: [
-      ...oidcSchema.fields,
-      {
-        name: 'auto_provision_users',
-        label: 'Auto-provision Users',
-        type: 'checkbox',
-        required: false,
-        description: 'Automatically create Jenkins users on first login'
-      },
-      {
-        name: 'role_mapping',
-        label: 'Role Mapping',
-        type: 'textarea',
-        required: false,
-        placeholder: '{\n  "admin": "jenkins-admin",\n  "developer": "jenkins-user"\n}',
-        description: 'JSON mapping of SSO roles to Jenkins permissions'
-      }
-    ],
-    setup_instructions: [
-      'Install the OIDC plugin in Jenkins',
-      'Configure OIDC settings in Manage Jenkins > Configure Global Security',
-      'Set up role-based authorization strategy',
-      'Configure user provisioning and role mapping',
-      'Test authentication and job access permissions'
-    ]
+    'oidc': {
+      integration_type: 'oidc',
+      display_name: 'Jenkins OIDC Integration',
+      description: 'Configure Jenkins with OIDC authentication via Keycloak',
+      fields: [
+        {
+          name: 'jenkins_url',
+          label: 'Jenkins URL',
+          type: 'url',
+          required: true,
+          placeholder: 'http://localhost:8080',
+          description: 'The base URL of your Jenkins instance'
+        },
+        {
+          name: 'client_id',
+          label: 'OIDC Client ID',
+          type: 'text',
+          required: true,
+          placeholder: 'jenkins-client-oidc',
+          description: 'OIDC Client ID (auto-generated)',
+          readonly: true
+        },
+        {
+          name: 'client_secret',
+          label: 'OIDC Client Secret',
+          type: 'password',
+          required: true,
+          placeholder: 'Enter client secret',
+          description: 'OIDC Client Secret from Keycloak',
+          sensitive: true
+        },
+        {
+          name: 'discovery_url',
+          label: 'Discovery URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:8080/realms/sso-hub/.well-known/openid_configuration',
+          description: 'OIDC Discovery URL (auto-generated)',
+          readonly: true
+        },
+        {
+          name: 'scopes',
+          label: 'OIDC Scopes',
+          type: 'text',
+          required: false,
+          placeholder: 'openid email profile offline_access roles',
+          description: 'Space-separated OIDC scopes (auto-populated with defaults)'
+        },
+        
+        // Keycloak Client Configuration Section
+        {
+          name: 'keycloak.root_url',
+          label: 'Root URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:8080',
+          description: 'Keycloak client root URL (auto-populated from Jenkins URL)'
+        },
+        {
+          name: 'keycloak.home_url',
+          label: 'Home URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:8080',
+          description: 'Keycloak client home URL (auto-populated from Jenkins URL)'
+        },
+        {
+          name: 'keycloak.redirect_uris',
+          label: 'Valid Redirect URIs',
+          type: 'textarea',
+          required: false,
+          placeholder: 'http://localhost:8080/securityRealm/finishLogin\nhttp://localhost:8080/auth/callback',
+          description: 'One redirect URI per line (auto-populated with Jenkins OIDC paths)'
+        },
+        {
+          name: 'keycloak.web_origins',
+          label: 'Web Origins',
+          type: 'textarea',
+          required: false,
+          placeholder: 'http://localhost:8080\nhttp://jenkins.company.com',
+          description: 'One web origin per line (auto-populated from Root URL)'
+        }
+      ]
+    }
   },
-  'gitlab': {
-    fields: [
-      ...oidcSchema.fields,
-      {
-        name: 'group_mapping',
-        label: 'Group Mapping',
-        type: 'textarea',
-        required: false,
-        placeholder: '{\n  "developers": "Developer",\n  "admins": "Owner"\n}',
-        description: 'JSON mapping of SSO groups to GitLab access levels'
-      }
-    ]
-  },
-  'github': {
-    fields: [
-      ...oauth2Schema.fields.filter(f => f.name !== 'grant_type'),
-      {
-        name: 'organization',
-        label: 'GitHub Organization',
-        type: 'text',
-        required: false,
-        placeholder: 'your-org',
-        description: 'Restrict access to specific GitHub organization'
-      }
-    ]
-  },
-  'sonarqube': {
-    fields: [
-      ...oidcSchema.fields,
-      {
-        name: 'force_authentication',
-        label: 'Force Authentication',
-        type: 'checkbox',
-        required: false,
-        description: 'Force users to authenticate via SSO (disable local login)'
-      }
-    ]
-  }
-};
-
-// Main schema registry
-export const configurationSchemas: Record<string, ToolConfigSchema> = {
-  'oidc': oidcSchema,
-  'oauth2': oauth2Schema,
-  'saml': samlSchema,
-  'custom': customSchema
-};
-
-// Helper function to get schema for a specific tool
-export function getToolConfigurationSchema(toolSlug: string, integrationType: string): ToolConfigSchema {
-  const baseSchema = configurationSchemas[integrationType] || customSchema;
-  const toolOverrides = toolSpecificSchemas[toolSlug];
   
-  if (toolOverrides) {
-    return {
-      ...baseSchema,
-      ...toolOverrides,
-      fields: toolOverrides.fields || baseSchema.fields,
-      setup_instructions: toolOverrides.setup_instructions || baseSchema.setup_instructions
-    };
-  }
-  
-  return baseSchema;
-}
-
-// Helper function to determine integration type from tool slug
-export function getDefaultIntegrationType(toolSlug: string): string {
-  const toolIntegrationTypes: Record<string, string> = {
-    'github': 'oauth2',
-    'gitlab': 'oidc',
-    'jenkins': 'oidc',
-    'grafana': 'oauth2',  // Grafana uses OAuth2 with generic_oauth provider
-    'sonarqube': 'oidc',
-    'argocd': 'oidc',
-    'prometheus': 'custom',
-    'kibana': 'saml',
-    'snyk': 'oidc',
-    'jira': 'saml',
-    'servicenow': 'saml',
-    'terraform': 'saml'
-  };
-  
-  return toolIntegrationTypes[toolSlug] || 'custom';
-}
-
-// Helper function to validate configuration fields
-export function validateConfigurationField(field: BaseConfigField, value: string): { valid: boolean; error?: string } {
-  if (field.required && (!value || value.trim() === '')) {
-    return { valid: false, error: `${field.label} is required` };
-  }
-  
-  if (field.validation?.pattern && value) {
-    const regex = new RegExp(field.validation.pattern);
-    if (!regex.test(value)) {
-      return { valid: false, error: `${field.label} format is invalid` };
+  'argocd': {
+    'oidc': {
+      integration_type: 'oidc',
+      display_name: 'Argo CD OIDC Integration',
+      description: 'Configure Argo CD with OIDC authentication via Keycloak',
+      fields: [
+        {
+          name: 'argocd_url',
+          label: 'Argo CD URL',
+          type: 'url',
+          required: true,
+          placeholder: 'http://localhost:8080',
+          description: 'The base URL of your Argo CD instance'
+        },
+        {
+          name: 'client_id',
+          label: 'OIDC Client ID',
+          type: 'text',
+          required: true,
+          placeholder: 'argocd-client-oidc',
+          description: 'OIDC Client ID (auto-generated)',
+          readonly: true
+        },
+        {
+          name: 'client_secret',
+          label: 'OIDC Client Secret',
+          type: 'password',
+          required: true,
+          placeholder: 'Enter client secret',
+          description: 'OIDC Client Secret from Keycloak',
+          sensitive: true
+        },
+        {
+          name: 'scopes',
+          label: 'OIDC Scopes',
+          type: 'text',
+          required: false,
+          placeholder: 'openid email profile offline_access roles',
+          description: 'Space-separated OIDC scopes (auto-populated with defaults)'
+        },
+        
+        // Keycloak Client Configuration Section
+        {
+          name: 'keycloak.root_url',
+          label: 'Root URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:8080',
+          description: 'Keycloak client root URL (auto-populated from Argo CD URL)'
+        },
+        {
+          name: 'keycloak.home_url',
+          label: 'Home URL',
+          type: 'url',
+          required: false,
+          placeholder: 'http://localhost:8080',
+          description: 'Keycloak client home URL (auto-populated from Argo CD URL)'
+        },
+        {
+          name: 'keycloak.redirect_uris',
+          label: 'Valid Redirect URIs',
+          type: 'textarea',
+          required: false,
+          placeholder: 'http://localhost:8080/auth/callback\nhttp://localhost:8080/api/dex/callback',
+          description: 'One redirect URI per line (auto-populated with Argo CD OIDC paths)'
+        },
+        {
+          name: 'keycloak.web_origins',
+          label: 'Web Origins',
+          type: 'textarea',
+          required: false,
+          placeholder: 'http://localhost:8080\nhttp://argocd.company.com',
+          description: 'One web origin per line (auto-populated from Root URL)'
+        }
+      ]
     }
   }
+};
+
+/**
+ * Get schema for a specific tool and integration type
+ */
+export function getToolConfigSchema(toolSlug: string, integrationType: string): ToolConfigSchema {
+  console.log(`🔍 Looking for schema: ${toolSlug}:${integrationType}`);
   
-  if (field.validation?.minLength && value && value.length < field.validation.minLength) {
-    return { valid: false, error: `${field.label} must be at least ${field.validation.minLength} characters` };
+  // Check for tool-specific schema first
+  if (toolSpecificSchemas[toolSlug] && toolSpecificSchemas[toolSlug][integrationType]) {
+    console.log(`✅ Found tool-specific schema for ${toolSlug}:${integrationType}`);
+    return toolSpecificSchemas[toolSlug][integrationType];
   }
   
-  if (field.validation?.maxLength && value && value.length > field.validation.maxLength) {
-    return { valid: false, error: `${field.label} must be no more than ${field.validation.maxLength} characters` };
+  // Fall back to generic schema by integration type
+  console.log(`⚠️ Using generic schema for ${integrationType}`);
+  switch (integrationType) {
+    case 'oidc':
+      return oidcSchema;
+    case 'oauth2':
+      return oauth2Schema;
+    case 'saml':
+      return samlSchema;
+    case 'custom':
+      return customSchema;
+    default:
+      return oidcSchema;
   }
+}
+
+/**
+ * Convert nested field names to flat object structure
+ * Example: 'oauth.client_id' -> { oauth: { client_id: value } }
+ */
+export function convertFlatToNested(flatData: Record<string, any>): Record<string, any> {
+  const nested: Record<string, any> = {};
   
+  Object.entries(flatData).forEach(([key, value]) => {
+    if (key.includes('.')) {
+      const parts = key.split('.');
+      let current = nested;
+      
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) {
+          current[parts[i]] = {};
+        }
+        current = current[parts[i]];
+      }
+      
+      current[parts[parts.length - 1]] = value;
+    } else {
+      nested[key] = value;
+    }
+  });
+  
+  return nested;
+}
+
+/**
+ * Convert nested object to flat field names
+ * Example: { oauth: { client_id: value } } -> 'oauth.client_id'
+ */
+export function convertNestedToFlat(nestedData: Record<string, any>, prefix = ''): Record<string, any> {
+  const flat: Record<string, any> = {};
+  
+  Object.entries(nestedData).forEach(([key, value]) => {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      Object.assign(flat, convertNestedToFlat(value, fullKey));
+    } else {
+      flat[fullKey] = value;
+    }
+  });
+  
+  return flat;
+}
+
+/**
+ * Validate a configuration field value
+ */
+export function validateConfigurationField(field: BaseConfigField, value: any): { valid: boolean; error?: string } {
+  // Skip validation for readonly fields
+  if (field.readonly) {
+    return { valid: true };
+  }
+
+  // Check required fields
+  if (field.required && (value === undefined || value === null || value === '')) {
+    return { valid: false, error: `${field.label} is required` };
+  }
+
+  // Skip validation if field is not required and empty
+  if (!field.required && (value === undefined || value === null || value === '')) {
+    return { valid: true };
+  }
+
+  // Type-specific validation
+  switch (field.type) {
+    case 'email':
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(value)) {
+        return { valid: false, error: 'Please enter a valid email address' };
+      }
+      break;
+
+    case 'url':
+      try {
+        new URL(value);
+      } catch {
+        return { valid: false, error: 'Please enter a valid URL' };
+      }
+      break;
+
+    case 'number':
+      if (isNaN(Number(value))) {
+        return { valid: false, error: 'Please enter a valid number' };
+      }
+      break;
+
+    case 'select':
+      if (field.options && !field.options.some(opt => opt.value === value)) {
+        return { valid: false, error: 'Please select a valid option' };
+      }
+      break;
+
+    case 'checkbox':
+      // Checkbox values should be boolean
+      if (typeof value !== 'boolean') {
+        return { valid: false, error: 'Invalid checkbox value' };
+      }
+      break;
+
+    case 'password':
+    case 'text':
+    case 'textarea':
+      // Basic text validation - could be enhanced with min/max length if needed
+      if (typeof value !== 'string') {
+        return { valid: false, error: 'Please enter valid text' };
+      }
+      break;
+
+    default:
+      // Unknown field type, assume valid
+      break;
+  }
+
   return { valid: true };
 }
+
+// Export all schemas for use in components
+export {
+  oidcSchema,
+  oauth2Schema,
+  samlSchema,
+  customSchema
+};

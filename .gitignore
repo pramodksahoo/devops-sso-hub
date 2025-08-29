@@ -56,7 +56,7 @@ junit.xml
 coverage.xml
 *.spec.js.map
 *.test.js.map
-
+tests/
 # Docker
 .docker/
 *.dockerignore.bak

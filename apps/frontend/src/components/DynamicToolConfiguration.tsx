@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Lock, CheckCircle, AlertCircle, Info } from 'lucide-react';
-import { getToolConfigurationSchema, getDefaultIntegrationType, validateConfigurationField, BaseConfigField, ToolConfigSchema } from './ToolConfigurationSchemas';
+import { getToolConfigSchema, convertFlatToNested, convertNestedToFlat, validateConfigurationField, BaseConfigField, ToolConfigSchema } from './ToolConfigurationSchemas';
 import { config } from '../config/environment';
 
 interface DynamicToolConfigurationProps {
@@ -22,6 +22,25 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
   onCancel,
   readonly = false
 }) => {
+  // Default integration type based on tool
+  const getDefaultIntegrationType = (toolSlug: string): string => {
+    const defaultTypes: Record<string, string> = {
+      grafana: 'oauth2',
+      jenkins: 'oidc',
+      argocd: 'oidc',
+      gitlab: 'oidc',
+      github: 'oauth2',
+      jira: 'saml',
+      servicenow: 'saml',
+      prometheus: 'oidc',
+      kibana: 'oidc',
+      snyk: 'oauth2',
+      terraform: 'oidc',
+      sonarqube: 'oidc'
+    };
+    return defaultTypes[toolSlug] || 'oidc';
+  };
+
   const [integrationType, setIntegrationType] = useState<string>(
     tool.integration_type || getDefaultIntegrationType(tool.slug)
   );
@@ -33,19 +52,25 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
   const [validationStatus, setValidationStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   useEffect(() => {
-    const toolSchema = getToolConfigurationSchema(tool.slug, integrationType);
+    const toolSchema = getToolConfigSchema(tool.slug, integrationType);
     setSchema(toolSchema);
     
-    // Initialize form data with existing auth_config or defaults
-    const initialData = { ...tool.auth_config };
+    // Initialize form data with existing auth_config
+    // Convert nested auth_config to flat form data for editing
+    let initialData: Record<string, any> = {};
     
-    // Ensure all schema fields have values
+    if (tool.auth_config) {
+      // Convert nested structure to flat field names for form
+      initialData = convertNestedToFlat(tool.auth_config);
+      console.log('🔄 Converted nested auth_config to flat form data:', initialData);
+    }
+    
+    // Ensure all schema fields have values (flat structure)
     toolSchema.fields.forEach(field => {
       if (!(field.name in initialData)) {
         // For readonly client_id fields, auto-generate the protocol-specific value
-        if (field.name === 'client_id' && field.readonly) {
-          const protocol = integrationType === 'oauth2' ? 'oauth2' : integrationType === 'oidc' ? 'oidc' : integrationType === 'saml' ? 'saml' : 'oauth2';
-          initialData[field.name] = `${tool.slug}-client-${protocol}`;
+        if (field.name === 'client_id' || field.name.endsWith('.client_id')) {
+          initialData[field.name] = `${tool.slug}-client-${integrationType}`;
         } else {
           initialData[field.name] = field.type === 'checkbox' ? false : '';
         }
@@ -120,55 +145,9 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
     setValidationStatus('idle');
 
     try {
-      // Transform form data for test connection (same as save)
-      let testConfig = formData;
-      
-      if (tool.slug === 'grafana' && integrationType === 'oauth2') {
-        testConfig = {
-          // Core settings
-          enabled: formData.enabled !== undefined ? formData.enabled : true,
-          
-          // Core OAuth2 settings for Grafana generic_oauth
-          grafana_url: formData.grafana_url,
-          client_id: formData.client_id,
-          client_secret: formData.client_secret,
-          
-          // Client configuration
-          client_protocol: formData.client_protocol || 'openid-connect',
-          access_type: formData.access_type || 'confidential',
-          
-          // Flow settings
-          standard_flow_enabled: formData.standard_flow_enabled !== undefined ? formData.standard_flow_enabled : true,
-          implicit_flow_enabled: formData.implicit_flow_enabled !== undefined ? formData.implicit_flow_enabled : false,
-          direct_access_grants_enabled: formData.direct_access_grants_enabled !== undefined ? formData.direct_access_grants_enabled : false,
-          
-          // URLs
-          auth_url: formData.auth_url,
-          token_url: formData.token_url,
-          api_url: formData.api_url,
-          
-          // Redirect and origin settings
-          redirect_uri: formData.redirect_uri,
-          web_origins: formData.web_origins || config.external.grafana,
-          admin_url: formData.admin_url || config.external.grafana,
-          base_url: formData.base_url || config.external.grafana,
-          
-          // OAuth scopes and token settings
-          scopes: formData.scopes || 'openid email profile offline_access roles',
-          use_refresh_token: formData.use_refresh_token !== undefined ? formData.use_refresh_token : true,
-          allow_sign_up: formData.allow_sign_up !== undefined ? formData.allow_sign_up : true,
-          signout_redirect_url: formData.signout_redirect_url || '',
-          
-          // Ensure PKCE is disabled for Grafana compatibility
-          use_pkce: false,
-          
-          // Additional metadata for backend processing
-          keycloak: {
-            realm: 'sso-hub',
-            client_id: formData.client_id
-          }
-        };
-      }
+      // Convert flat form data back to nested structure for backend
+      const testConfig = convertFlatToNested(formData);
+      console.log('🔄 Converted flat form data to nested config for test:', testConfig);
 
       const response = await fetch(`${config.urls.api}/tools/${tool.id}/test-connection`, {
         method: 'POST',
@@ -226,58 +205,29 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
           // Reset validation status
           setValidationStatus('idle');
           
-          // For Grafana, map the OAuth2 config to the specific form fields
-          let mappedConfig = result.config;
-          if (tool.slug === 'grafana' && integrationType === 'oauth2') {
-            // Map OAuth2 fields to Grafana-specific fields with comprehensive configuration
-            mappedConfig = {
-              // Core settings
-              enabled: result.config.enabled !== undefined ? result.config.enabled : true,
-              
-              // Keep existing Grafana URL or use default
-              grafana_url: formData.grafana_url || result.config.grafana_url || config.external.grafana,
-              
-              // Auto-populate from Keycloak
-              client_id: result.config.client_id,
-              client_secret: result.config.client_secret,
-              
-              // Client configuration
-              client_protocol: result.config.client_protocol || 'openid-connect',
-              access_type: result.config.access_type || 'confidential',
-              
-              // Flow settings
-              standard_flow_enabled: result.config.standard_flow_enabled !== undefined ? result.config.standard_flow_enabled : true,
-              implicit_flow_enabled: result.config.implicit_flow_enabled !== undefined ? result.config.implicit_flow_enabled : false,
-              direct_access_grants_enabled: result.config.direct_access_grants_enabled !== undefined ? result.config.direct_access_grants_enabled : false,
-              
-              // URLs (auto-generated from system settings)
-              auth_url: result.config.auth_url,
-              token_url: result.config.token_url,
-              api_url: result.config.api_url || result.config.userinfo_url,
-              
-              // Redirect and origin settings
-              redirect_uri: formData.redirect_uri || result.config.redirect_uri || `${config.external.grafana}/login/generic_oauth`,
-              web_origins: result.config.web_origins || config.external.grafana,
-              admin_url: result.config.admin_url || config.external.grafana,
-              base_url: result.config.base_url || config.external.grafana,
-              
-              // OAuth scopes
-              scopes: result.config.scopes || 'openid email profile offline_access roles',
-              
-              // OAuth behaviors
-              use_refresh_token: result.config.use_refresh_token !== undefined ? result.config.use_refresh_token : true,
-              allow_sign_up: result.config.allow_sign_up !== undefined ? result.config.allow_sign_up : true,
-              signout_redirect_url: result.config.signout_redirect_url || `${config.external.keycloak}/realms/sso-hub/protocol/openid-connect/logout`
-            };
-          }
+          // Convert nested config from backend to flat form data
+          const mappedConfig = convertNestedToFlat(result.config);
+          console.log('🔄 Converted nested Keycloak config to flat form data:', mappedConfig);
           
-          // Auto-populate the form with fresh Keycloak configuration
+          // CRITICAL FIX: Auto-populate should preserve existing user-entered fields
+          // Only populate OAuth-related fields, never overwrite user-provided URLs
           setFormData(prev => {
+            const preservedFields = {
+              grafana_url: prev.grafana_url, // Always preserve Grafana URL
+              // Add any other user-critical fields that should never be auto-populated
+            };
+            
+            // Merge with selective field preservation
             const newData = {
               ...prev,
-              ...mappedConfig
+              ...mappedConfig,
+              ...preservedFields // Override with preserved fields
             };
-            console.log('Form data updated:', newData);
+            
+            console.log('🛡️ Auto-populate with field preservation - Previous:', prev);
+            console.log('🔄 Keycloak config to merge:', mappedConfig);
+            console.log('🔒 Preserved fields:', preservedFields);
+            console.log('✅ Final form data:', newData);
             return newData;
           });
         } else {
@@ -296,56 +246,9 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
   const handleSave = () => {
     if (!validateForm()) return;
 
-    // Transform form data to match backend schema structure
-    let configData = formData;
-    
-    if (tool.slug === 'grafana' && integrationType === 'oauth2') {
-      // Transform flat form data to comprehensive Grafana OAuth2 configuration structure
-      configData = {
-        // Core settings
-        enabled: formData.enabled !== undefined ? formData.enabled : true,
-        
-        // Core OAuth2 settings for Grafana generic_oauth
-        grafana_url: formData.grafana_url,
-        client_id: formData.client_id,
-        client_secret: formData.client_secret,
-        
-        // Client configuration
-        client_protocol: formData.client_protocol || 'openid-connect',
-        access_type: formData.access_type || 'confidential',
-        
-        // Flow settings
-        standard_flow_enabled: formData.standard_flow_enabled !== undefined ? formData.standard_flow_enabled : true,
-        implicit_flow_enabled: formData.implicit_flow_enabled !== undefined ? formData.implicit_flow_enabled : false,
-        direct_access_grants_enabled: formData.direct_access_grants_enabled !== undefined ? formData.direct_access_grants_enabled : false,
-        
-        // URLs (auto-generated)
-        auth_url: formData.auth_url,
-        token_url: formData.token_url,
-        api_url: formData.api_url,
-        
-        // Redirect and origin settings
-        redirect_uri: formData.redirect_uri,
-        web_origins: formData.web_origins || config.external.grafana,
-        admin_url: formData.admin_url || config.external.grafana,
-        base_url: formData.base_url || config.external.grafana,
-        
-        // OAuth scopes and token settings
-        scopes: formData.scopes || 'openid email profile offline_access roles',
-        use_refresh_token: formData.use_refresh_token !== undefined ? formData.use_refresh_token : true,
-        allow_sign_up: formData.allow_sign_up !== undefined ? formData.allow_sign_up : true,
-        signout_redirect_url: formData.signout_redirect_url || '',
-        
-        // Ensure PKCE is disabled for Grafana compatibility
-        use_pkce: false,
-        
-        // Additional metadata for backend processing
-        keycloak: {
-          realm: 'sso-hub',
-          client_id: formData.client_id
-        }
-      };
-    }
+    // Convert flat form data back to nested structure for backend
+    const configData = convertFlatToNested(formData);
+    console.log('🔄 Converted flat form data to nested config for save:', configData);
 
     onSave({
       integration_type: integrationType,
@@ -389,6 +292,7 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
 
         {field.type === 'select' ? (
           <select
+            name={field.name}
             value={value || ''}
             onChange={(e) => handleFieldChange(field.name, e.target.value)}
             className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
@@ -407,6 +311,7 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
         ) : field.type === 'checkbox' ? (
           <label className="flex items-center space-x-2">
             <input
+              name={field.name}
               type="checkbox"
               checked={value || false}
               onChange={(e) => handleFieldChange(field.name, e.target.checked)}
@@ -417,6 +322,7 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
           </label>
         ) : field.type === 'textarea' ? (
           <textarea
+            name={field.name}
             value={showValue ? (value || '') : '••••••••••••••••'}
             onChange={(e) => handleFieldChange(field.name, e.target.value)}
             placeholder={(readonly || field.readonly) ? '' : field.placeholder}
@@ -429,6 +335,7 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
           />
         ) : (
           <input
+            name={field.name}
             type={field.type === 'password' && showValue ? 'text' : field.type}
             value={showValue ? (value || '') : '••••••••••••••••'}
             onChange={(e) => handleFieldChange(field.name, e.target.value)}

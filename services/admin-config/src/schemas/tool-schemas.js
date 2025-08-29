@@ -5,7 +5,7 @@ const infisicalSecretRef = z.string().regex(/^infisical:\/\//, 'Must be an Infis
 const urlSchema = z.string().url('Must be a valid URL');
 const clientCredentialsSchema = z.object({
   client_id: z.string().min(1, 'Client ID is required'),
-  client_secret: infisicalSecretRef
+  client_secret: z.string().optional().default('') // Can be auto-populated or provided by user
 });
 
 // GitHub Integration Schema
@@ -290,9 +290,9 @@ const grafanaSchema = z.object({
     token_url: urlSchema,
     api_url: urlSchema,
     
-    // Client Credentials (Required) 
+    // Client Credentials (client_id required, client_secret can be auto-populated)
     client_id: z.string().min(1, 'Client ID is required'),
-    client_secret: z.string().min(1, 'Client Secret is required'),
+    client_secret: z.string().optional().default(''), // Can be auto-populated from Keycloak
     
     // OAuth Settings
     enabled: z.boolean().default(true),
@@ -320,7 +320,7 @@ const grafanaSchema = z.object({
   // Admin Access for Configuration
   admin_credentials: z.object({
     username: z.string().default('admin'),
-    password: z.string().min(1, 'Admin password is required')
+    password: z.string().optional().default('') // Can be provided by user or left empty
   }),
   
   // Organization Management Settings

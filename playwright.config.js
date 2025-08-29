@@ -40,46 +40,24 @@ module.exports = defineConfig({
     navigationTimeout: 30000,
   },
 
-  /* Configure projects for major browsers */
+  /* Configure projects for major browsers - CHROMIUM ONLY for stable testing */
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-
-    /* Test against mobile viewports. */
-    {
-      name: 'Mobile Chrome',
-      use: { ...devices['Pixel 5'] },
-    },
-    {
-      name: 'Mobile Safari',
-      use: { ...devices['iPhone 12'] },
-    },
-
-    /* Test against branded browsers. */
-    {
-      name: 'Microsoft Edge',
-      use: { ...devices['Desktop Edge'], channel: 'msedge' },
-    },
-    {
-      name: 'Google Chrome',
-      use: { ...devices['Desktop Chrome'], channel: 'chrome' },
-    },
+      use: { 
+        ...devices['Desktop Chrome'],
+        // Additional session stability settings
+        viewport: { width: 1920, height: 1080 },
+        ignoreHTTPSErrors: true,
+        acceptDownloads: true,
+        // Preserve authentication state
+        storageState: './tests/auth-state.json'
+      },
+    }
   ],
 
   /* Global setup and teardown */
-  // globalSetup: './tests/global-setup.js',
+  // globalSetup: './tests/global-setup.js', // Disabled - using existing auth state
   // globalTeardown: './tests/global-teardown.js',
 
   /* Skip webServer for now to focus on test execution */

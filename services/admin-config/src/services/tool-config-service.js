@@ -33,13 +33,141 @@ class ToolConfigService {
   }
 
   async createTables() {
-    // Tables already exist from migration scripts, no need to create them
-    // Just verify database connectivity
+    // Auto-create tables if they don't exist (fallback for manual deployments)
     try {
-      await this.pool.query('SELECT 1');
-      console.log('✅ Database tables verified (using existing migration tables)');
+      console.log('🔍 Verifying and auto-creating database tables if needed...');
+      
+      // Create supported_tools table if not exists
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS supported_tools (
+          tool_type VARCHAR(50) PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          category VARCHAR(50) NOT NULL,
+          protocol VARCHAR(20) NOT NULL,
+          description TEXT,
+          is_enabled BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      
+      // Create tool_configurations table if not exists
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS tool_configurations (
+          id SERIAL PRIMARY KEY,
+          tool_type VARCHAR(50) NOT NULL,
+          environment VARCHAR(50) DEFAULT 'development',
+          integration_type VARCHAR(20) NOT NULL,
+          config_json JSONB NOT NULL,
+          status VARCHAR(20) DEFAULT 'configured',
+          keycloak_client_id VARCHAR(255),
+          keycloak_client_uuid VARCHAR(255),
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW(),
+          created_by VARCHAR(100) DEFAULT 'system',
+          updated_by VARCHAR(100) DEFAULT 'system',
+          UNIQUE(tool_type, environment)
+        )
+      `);
+      
+      // Create tools table if not exists (for catalog service compatibility)
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS tools (
+          id SERIAL PRIMARY KEY,
+          slug VARCHAR(50) UNIQUE NOT NULL,
+          name VARCHAR(100) NOT NULL,
+          base_url VARCHAR(255),
+          integration_type VARCHAR(20),
+          auth_config JSONB,
+          auth_config_json JSONB,
+          status VARCHAR(20) DEFAULT 'active',
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      
+      // Create config_audit_log table if not exists
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS config_audit_log (
+          id SERIAL PRIMARY KEY,
+          tool_type VARCHAR(50) NOT NULL,
+          action VARCHAR(20) NOT NULL,
+          old_config JSONB,
+          new_config JSONB,
+          changed_by VARCHAR(100) NOT NULL,
+          changed_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      
+      // Create tool_status table if not exists
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS tool_status (
+          id SERIAL PRIMARY KEY,
+          tool_type VARCHAR(50) NOT NULL,
+          status VARCHAR(20) NOT NULL,
+          last_tested_at TIMESTAMP,
+          test_results JSONB,
+          error_message TEXT,
+          uptime_percentage DECIMAL(5,2),
+          response_time_ms INTEGER,
+          created_at TIMESTAMP DEFAULT NOW()
+        )
+      `);
+      
+      console.log('✅ Database tables verified and auto-created if needed');
+      
+      // Ensure tools table has all supported tools as records
+      await this.ensureToolRecords();
+      
     } catch (error) {
-      console.error('❌ Failed to verify database connectivity:', error);
+      console.error('❌ Failed to verify/create database tables:', error);
+      throw error;
+    }
+  }
+  
+  getDefaultBaseUrl(toolType) {
+    const defaultUrls = {
+      github: 'https://github.com',
+      gitlab: 'https://gitlab.com',
+      jenkins: 'https://jenkins.example.com',
+      argocd: 'https://argocd.example.com',
+      terraform: 'https://terraform.example.com',
+      sonarqube: 'https://sonarqube.example.com',
+      grafana: 'http://localhost:3100',
+      prometheus: 'https://prometheus.example.com',
+      kibana: 'https://kibana.example.com',
+      snyk: 'https://snyk.io',
+      jira: 'https://jira.example.com',
+      servicenow: 'https://servicenow.example.com'
+    };
+    
+    return defaultUrls[toolType] || `https://${toolType}.example.com`;
+  }
+
+  async ensureToolRecords() {
+    try {
+      console.log('🔍 Ensuring all supported tools exist in tools table...');
+      
+      const toolsMetadata = toolSchemas.getAllMetadata();
+      
+      for (const [toolType, metadata] of Object.entries(toolsMetadata)) {
+        // Insert tool record if not exists with default base URL and integration type
+        const defaultBaseUrl = this.getDefaultBaseUrl(toolType);
+        await this.pool.query(`
+          INSERT INTO tools (slug, name, base_url, integration_type, status)
+          VALUES ($1, $2, $3, $4, 'active')
+          ON CONFLICT (slug) DO UPDATE SET
+            name = EXCLUDED.name,
+            base_url = COALESCE(tools.base_url, EXCLUDED.base_url),
+            integration_type = COALESCE(tools.integration_type, EXCLUDED.integration_type),
+            updated_at = NOW()
+        `, [toolType, metadata.name, defaultBaseUrl, metadata.protocol]);
+      }
+      
+      console.log('✅ All supported tools ensured in tools table');
+      
+    } catch (error) {
+      console.error('❌ Failed to ensure tool records:', error);
       throw error;
     }
   }
@@ -92,7 +220,7 @@ class ToolConfigService {
           FROM tool_status 
           ORDER BY tool_type, created_at DESC
         ) ts ON st.tool_type = ts.tool_type
-        WHERE st.is_active = true
+        WHERE st.is_enabled = true
         ORDER BY st.category, st.name
       `;
       
@@ -173,52 +301,67 @@ class ToolConfigService {
       // Get existing configuration for audit (using environment constraint)
       const environment = 'development'; // Default environment for admin-config
       const existingResult = await client.query(
-        'SELECT config_json FROM tool_configurations WHERE tool_type = $1 AND environment = $2',
+        'SELECT config_json, keycloak_client_id, integration_type FROM tool_configurations WHERE tool_type = $1 AND environment = $2',
         [toolType, environment]
       );
       const oldConfig = existingResult.rows.length > 0 ? existingResult.rows[0].config_json : null;
+      const existingIntegrationType = existingResult.rows.length > 0 ? existingResult.rows[0].integration_type : null;
+      
+      // Determine integration type - PRESERVE EXISTING TYPE TO MAINTAIN STABLE CLIENT IDs
+      let integrationType;
+      
+      if (existingIntegrationType) {
+        // If we already have an integration type, keep it to maintain stable client IDs
+        integrationType = existingIntegrationType;
+        console.log(`📝 Using existing integration type: ${integrationType} for ${toolType}`);
+      } else {
+        // First time setup - use tool metadata default protocol
+        const toolSchemas = require('../schemas/tool-schemas');
+        const metadata = toolSchemas.getMetadata(toolType);
+        integrationType = metadata.protocol;
+        console.log(`📝 First time setup for ${toolType}, using metadata protocol: ${integrationType}`);
+      }
+      
+      // Generate correct keycloak_client_id with protocol suffix
+      const keycloakClientId = `${toolType}-client-${integrationType}`;
+      
+      console.log(`📝 Saving config for ${toolType} with integration type: ${integrationType}, client_id: ${keycloakClientId}`);
       
       // Insert or update configuration in tool_configurations table
       // Use the actual composite unique constraint (tool_type, environment)
       const upsertResult = await client.query(`
-        INSERT INTO tool_configurations (tool_type, integration_type, config_json, environment, status, updated_by)
-        VALUES ($1, $2, $3, $4, 'configured', $5)
+        INSERT INTO tool_configurations (tool_type, integration_type, config_json, environment, status, updated_by, keycloak_client_id)
+        VALUES ($1, $2, $3, $4, 'configured', $5, $6)
         ON CONFLICT (tool_type, environment) DO UPDATE SET
           config_json = EXCLUDED.config_json,
+          integration_type = EXCLUDED.integration_type,
           status = EXCLUDED.status,
           updated_by = EXCLUDED.updated_by,
+          keycloak_client_id = EXCLUDED.keycloak_client_id,
           updated_at = NOW()
         RETURNING *
-      `, [toolType, 'oidc', JSON.stringify(configData), environment, userId]);
+      `, [toolType, integrationType, JSON.stringify(configData), environment, userId, keycloakClientId]);
       
       const savedConfig = upsertResult.rows[0];
       
       // IMPORTANT: Also update the main tools table for catalog service
-      // Extract integration type and base URL from config
-      let integrationType = 'oidc'; // default
-      let baseUrl = configData.base_url || configData.instance_url || configData.grafana_url || 'https://example.com';
+      // Extract base URL from config
+      let baseUrl = configData.base_url || configData.instance_url || configData.grafana_url || 
+                    configData.jenkins_url || configData.argocd_url || configData.sonarqube_url || 
+                    'https://example.com';
       
-      // Determine integration type based on config
-      if (configData.auth_url && !configData.discovery_url) {
-        integrationType = 'oauth2';
-      } else if (configData.idp_sso_url) {
-        integrationType = 'saml';
-      } else if (configData.discovery_url || configData.auth_url) {
-        integrationType = 'oidc';
-      } else if (configData.api_key || configData.token) {
-        integrationType = 'custom';
-      }
-      
-      // Update the tools table with the configuration
-      await client.query(`
+      // Update the tools table with the configuration and sync keycloak client info
+      const toolsUpdateResult = await client.query(`
         UPDATE tools 
         SET 
           auth_config = $1,
+          auth_config_json = $1,
           integration_type = $2,
           base_url = $3,
           status = 'active',
           updated_at = NOW()
         WHERE slug = $4
+        RETURNING id, slug, name
       `, [
         JSON.stringify(configData),
         integrationType,
@@ -226,7 +369,11 @@ class ToolConfigService {
         toolType
       ]);
       
-      console.log(`✅ Updated tools table for ${toolType} with integration type: ${integrationType}`);
+      if (toolsUpdateResult.rows.length === 0) {
+        throw new Error(`Tool '${toolType}' not found in tools table. Please ensure it exists.`);
+      }
+      
+      console.log(`✅ Updated tools table for ${toolType} with integration type: ${integrationType}, keycloak_client_id: ${keycloakClientId}`);
       
       // Log the change in audit table
       await client.query(`
@@ -281,18 +428,38 @@ class ToolConfigService {
     }
   }
 
-  async updateToolKeycloakClient(toolType, clientData) {
+  async updateToolKeycloakClient(toolType, clientData, integrationType = 'oauth2') {
     try {
-      await this.pool.query(`
-        UPDATE tool_configurations 
-        SET 
-          keycloak_client_id = $1,
-          keycloak_client_uuid = $2,
+      // Use UPSERT (INSERT ON CONFLICT UPDATE) to handle both new and existing configurations
+      // Note: The unique constraint is on (tool_type, environment), defaulting to 'development'
+      const upsertResult = await this.pool.query(`
+        INSERT INTO tool_configurations (
+          tool_type, integration_type, keycloak_client_id, keycloak_client_uuid, environment, created_at, updated_at
+        )
+        VALUES ($1, $2, $3, $4, 'development', NOW(), NOW())
+        ON CONFLICT (tool_type, environment)
+        DO UPDATE SET 
+          integration_type = EXCLUDED.integration_type,
+          keycloak_client_id = EXCLUDED.keycloak_client_id,
+          keycloak_client_uuid = EXCLUDED.keycloak_client_uuid,
           updated_at = NOW()
-        WHERE tool_type = $3
-      `, [clientData.clientId, clientData.id, toolType]);
+        RETURNING keycloak_client_id, integration_type
+      `, [toolType, integrationType, clientData.clientId, clientData.id]);
       
-      console.log(`✅ Updated Keycloak client info for ${toolType}`);
+      if (upsertResult.rows.length === 0) {
+        throw new Error(`Failed to create or update tool configuration for ${toolType}`);
+      }
+      
+      const updatedRecord = upsertResult.rows[0];
+      console.log(`✅ Created/updated Keycloak client info for ${toolType}: ${updatedRecord.keycloak_client_id}`);
+      
+      // Validate that client_id follows the correct format
+      const expectedFormat = `${toolType}-client-${updatedRecord.integration_type}`;
+      if (clientData.clientId !== expectedFormat) {
+        console.warn(`⚠️  Client ID format mismatch for ${toolType}: expected '${expectedFormat}', got '${clientData.clientId}'`);
+      }
+      
+      return updatedRecord;
     } catch (error) {
       console.error(`Failed to update Keycloak client info for ${toolType}:`, error);
       throw error;
@@ -405,6 +572,60 @@ class ToolConfigService {
     } catch (error) {
       console.error('Failed to get tool metrics:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get all tool configurations from database (for sync operations)
+   */
+  async getAllToolConfigs() {
+    try {
+      const result = await this.pool.query(`
+        SELECT 
+          id, tool_type, integration_type, config_json, 
+          keycloak_client_id, keycloak_client_uuid, status,
+          created_at, updated_at, created_by, updated_by
+        FROM tool_configurations
+        ORDER BY tool_type, integration_type
+      `);
+      
+      return result.rows.map(row => ({
+        ...row,
+        config_json: row.config_json || {}
+      }));
+    } catch (error) {
+      console.error('❌ Failed to get all tool configurations:', error);
+      throw new Error(`Failed to get all tool configurations: ${error.message}`);
+    }
+  }
+
+  /**
+   * Update tool configuration (for sync operations)
+   */
+  async updateToolConfig(toolType, configData) {
+    try {
+      const { integration_type, config_json, keycloak_client_id, keycloak_client_uuid } = configData;
+      
+      const result = await this.pool.query(`
+        UPDATE tool_configurations
+        SET 
+          integration_type = COALESCE($2, integration_type),
+          config_json = COALESCE($3, config_json),
+          keycloak_client_id = COALESCE($4, keycloak_client_id),
+          keycloak_client_uuid = COALESCE($5, keycloak_client_uuid),
+          updated_at = NOW()
+        WHERE tool_type = $1
+        RETURNING id, tool_type, integration_type, updated_at
+      `, [toolType, integration_type, config_json, keycloak_client_id, keycloak_client_uuid]);
+      
+      if (result.rows.length === 0) {
+        throw new Error(`No configuration found for tool type: ${toolType}`);
+      }
+      
+      return result.rows[0];
+    } catch (error) {
+      console.error(`❌ Failed to update tool configuration for ${toolType}:`, error);
+      throw new Error(`Failed to update tool configuration: ${error.message}`);
     }
   }
 }

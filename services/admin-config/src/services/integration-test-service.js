@@ -428,40 +428,45 @@ class IntegrationTestService {
   }
   
   validateGrafanaConfig(config) {
-    console.log('🔍 Validating Grafana config:', JSON.stringify(config, null, 2));
+    console.log('🔍 Validating Grafana config for connection test:', JSON.stringify(config, null, 2));
+    
+    // CRITICAL FIX: Test connection should only validate connectivity requirements
+    // Don't block test connection on field completeness
+    
+    // Required fields for connection testing (minimal)
+    if (!config.grafana_url) {
+      return { isValid: false, error: 'Grafana URL is required for connection test' };
+    }
     
     // Support both flat structure (new) and nested structure (legacy)
     const isFlat = !config.oauth && config.client_id;
     
-    // Required fields validation
-    if (!config.grafana_url) {
-      return { isValid: false, error: 'Grafana URL is required' };
-    }
-    
     if (isFlat) {
-      // Validate flat OAuth2 structure (new format)
-      const requiredFields = [
-        { field: 'client_id', name: 'Client ID' },
-        { field: 'client_secret', name: 'Client Secret' },
-        { field: 'auth_url', name: 'Authorization URL' },
-        { field: 'token_url', name: 'Token URL' },
-        { field: 'api_url', name: 'API URL' },
-        { field: 'redirect_uri', name: 'Redirect URI' }
+      // For flat structure, we only need Grafana URL for basic connectivity test
+      // Client credentials are optional for connection testing
+      
+      // Auto-generate OAuth URLs if not provided (for connection testing)
+      const optionalFields = [
+        { field: 'auth_url', name: 'Authorization URL', default: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/auth` },
+        { field: 'token_url', name: 'Token URL', default: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/token` },
+        { field: 'api_url', name: 'API URL', default: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/userinfo` }
       ];
       
-      for (const { field, name } of requiredFields) {
-        if (!config[field]) {
-          return { isValid: false, error: `${name} is required` };
+      // Auto-generate OAuth URLs for connection testing if not provided
+      for (const { field, default: defaultValue } of optionalFields) {
+        if (!config[field] && defaultValue) {
+          config[field] = defaultValue;
+          console.log(`🔧 Auto-generated ${field} for connection test: ${config[field]}`);
         }
       }
       
-      // URL format validation
+      // URL format validation (only validate existing URLs for connection test)
       try {
         new URL(config.grafana_url);
-        new URL(config.auth_url);
-        new URL(config.token_url);
-        new URL(config.api_url);
-        new URL(config.redirect_uri);
+        if (config.auth_url) new URL(config.auth_url);
+        if (config.token_url) new URL(config.token_url);
+        if (config.api_url) new URL(config.api_url);
+        if (config.redirect_uri) new URL(config.redirect_uri);
       } catch (error) {
         return { isValid: false, error: 'One or more URLs are invalid format' };
       }
@@ -471,39 +476,37 @@ class IntegrationTestService {
         return { isValid: false, error: 'OAuth configuration is required' };
       }
       
-      const requiredOAuthFields = [
-        { field: 'client_id', name: 'Client ID' },
-        { field: 'client_secret', name: 'Client Secret' },
-        { field: 'auth_url', name: 'Authorization URL' },
-        { field: 'token_url', name: 'Token URL' },
-        { field: 'api_url', name: 'API URL' }
+      // For nested structure, we only need basic OAuth configuration for connection testing
+      // Client credentials are optional for basic connectivity test
+      
+      // OAuth URLs are auto-generated if not provided (for connection testing)
+      const optionalOAuthFields = [
+        { field: 'auth_url', name: 'Authorization URL', default: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/auth` },
+        { field: 'token_url', name: 'Token URL', default: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/token` },
+        { field: 'api_url', name: 'API URL', default: `${process.env.KEYCLOAK_URL}/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/userinfo` }
       ];
       
-      for (const { field, name } of requiredOAuthFields) {
-        if (!config.oauth[field]) {
-          return { isValid: false, error: `OAuth ${name} is required` };
+      // Auto-generate OAuth URLs for connection testing if not provided
+      for (const { field, default: defaultValue } of optionalOAuthFields) {
+        if (!config.oauth[field] && defaultValue) {
+          config.oauth[field] = defaultValue;
+          console.log(`🔧 Auto-generated oauth.${field} for connection test: ${config.oauth[field]}`);
         }
       }
       
-      // URL format validation
+      // URL format validation (only validate URLs that exist)
       try {
         new URL(config.grafana_url);
-        new URL(config.oauth.auth_url);
-        new URL(config.oauth.token_url);
-        new URL(config.oauth.api_url);
+        if (config.oauth.auth_url) new URL(config.oauth.auth_url);
+        if (config.oauth.token_url) new URL(config.oauth.token_url);
+        if (config.oauth.api_url) new URL(config.oauth.api_url);
       } catch (error) {
         return { isValid: false, error: 'One or more URLs are invalid format' };
       }
       
-      // Admin credentials validation (legacy)
-      if (config.admin_credentials) {
-        if (!config.admin_credentials.username) {
-          return { isValid: false, error: 'Admin username is required' };
-        }
-        if (!config.admin_credentials.password) {
-          return { isValid: false, error: 'Admin password is required' };
-        }
-      }
+      // Admin credentials are NOT required for connection testing
+      // Connection test focuses on network connectivity and OAuth endpoints only
+      console.log('🔧 Admin credentials not required for connection testing - focusing on connectivity');
     }
     
     return { isValid: true };
@@ -631,7 +634,8 @@ class IntegrationTestService {
   async testKeycloakClientConfig(toolType, config) {
     const startTime = Date.now();
     try {
-      const clientId = `${toolType}-client`;
+      const metadata = keycloakService.getToolMetadata(toolType);
+      const clientId = `${toolType}-client-${metadata.protocol}`;
       const client = await keycloakService.getClient(clientId);
       
       return {
