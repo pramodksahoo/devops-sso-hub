@@ -149,7 +149,7 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
       const testConfig = convertFlatToNested(formData);
       console.log('🔄 Converted flat form data to nested config for test:', testConfig);
 
-      const response = await fetch(`${config.urls.api}/tools/${tool.id}/test-connection`, {
+      const response = await fetch(`${config.services.adminConfig}/tools/${tool.id}/test-connection`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -185,7 +185,7 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
     try {
       console.log(`Auto-populating ${integrationType} config for tool: ${tool.slug}`);
       
-      const response = await fetch(`${config.urls.api}/keycloak/config/${integrationType}?tool=${tool.slug}`, {
+      const response = await fetch(`${config.services.adminConfig}/keycloak/config/${integrationType}?tool=${tool.slug}`, {
         credentials: 'include',
         headers: {
           'Accept': 'application/json'

@@ -28,6 +28,9 @@ const config = {
   JWT_SECRET: process.env.JWT_SECRET || 'admin-config-jwt-secret-key',
   ADMIN_API_KEY: process.env.ADMIN_API_KEY || 'admin-api-key-change-in-production',
   
+  // CORS Configuration
+  CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  
   // Tool Integration URLs (can be overridden per configuration)
   TOOL_DEFAULTS: {
     github: {

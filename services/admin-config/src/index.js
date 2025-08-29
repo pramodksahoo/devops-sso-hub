@@ -48,9 +48,15 @@ function debugFieldProcessing(fieldName, userValue, processedValue) {
 
 // Register plugins
 async function registerPlugins() {
-  // CORS
+  // CORS - Support external deployment  
+  const corsOrigins = process.env.CORS_ORIGIN ? 
+    process.env.CORS_ORIGIN.split(',').map(origin => origin.trim()) : 
+    ['http://localhost:3000', 'http://localhost:3002'];
+    
+  console.log('🌐 CORS Origins configured:', corsOrigins);
+    
   await fastify.register(require('@fastify/cors'), {
-    origin: ['http://localhost:3000', 'http://localhost:3002'],
+    origin: corsOrigins,
     credentials: true
   });
 
