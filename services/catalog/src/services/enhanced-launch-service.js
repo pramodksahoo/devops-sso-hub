@@ -347,25 +347,47 @@ class EnhancedLaunchService {
     return finalUrl;
   }
 
-  // Helper function to ensure protocol consistency in URLs
+  // CRITICAL FIX: Helper function to ensure protocol consistency in URLs  
+  // Enhanced with error boundaries to prevent JSON processing contamination
   ensureProtocolConsistency(baseUrl, path = '') {
-    if (!baseUrl) return path;
+    // Input validation to prevent JSON processing issues
+    if (!baseUrl || typeof baseUrl !== 'string') {
+      this.fastify.log.warn(`Invalid baseUrl for protocol consistency: ${baseUrl}`);
+      return String(path || '');
+    }
     
     try {
-      const baseUrlObj = new URL(baseUrl);
+      // Convert inputs to strings to ensure no object contamination
+      const safeBaseUrl = String(baseUrl).trim();
+      const safePath = String(path).trim();
+      
+      const baseUrlObj = new URL(safeBaseUrl);
       const protocol = baseUrlObj.protocol;
       const hostname = baseUrlObj.hostname;
       const port = baseUrlObj.port;
       
       // Construct the full URL with consistent protocol
       const portPart = port ? `:${port}` : '';
-      const fullUrl = `${protocol}//${hostname}${portPart}${path}`;
+      const fullUrl = `${protocol}//${hostname}${portPart}${safePath}`;
       
-      this.fastify.log.info(`🔧 Protocol consistency: ${baseUrl} + ${path} = ${fullUrl}`);
-      return fullUrl;
+      this.fastify.log.info(`🔧 Protocol consistency: ${safeBaseUrl} + ${safePath} = ${fullUrl}`);
+      
+      // Validate the generated URL before returning
+      try {
+        new URL(fullUrl); // Validation check
+        return fullUrl;
+      } catch (validationError) {
+        this.fastify.log.warn(`Generated URL validation failed: ${fullUrl}`);
+        return safePath ? `${safeBaseUrl}${safePath}` : safeBaseUrl;
+      }
+      
     } catch (error) {
-      this.fastify.log.warn(`⚠️ URL parsing error for ${baseUrl}: ${error.message}`);
-      return path ? `${baseUrl}${path}` : baseUrl; // Fallback
+      // Enhanced error handling that won't interfere with JSON operations
+      this.fastify.log.error(`URL processing error for ${baseUrl}: ${error.message}`);
+      // Safe fallback that preserves functionality
+      const safeBaseUrl = String(baseUrl);
+      const safePath = String(path);
+      return safePath ? `${safeBaseUrl}${safePath}` : safeBaseUrl;
     }
   }
 

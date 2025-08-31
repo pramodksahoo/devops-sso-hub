@@ -275,25 +275,49 @@ class KeycloakService {
     ];
   }
 
-  // Helper function to ensure protocol consistency in URLs
+  // CRITICAL FIX: Helper function to ensure protocol consistency in URLs
+  // Enhanced with error boundaries to prevent JSON processing contamination
   ensureProtocolConsistency(baseUrl, path) {
-    if (!baseUrl || !path) return path;
+    // Input validation to prevent JSON processing issues
+    if (!baseUrl || typeof baseUrl !== 'string') {
+      console.warn(`⚠️ Invalid baseUrl for protocol consistency: ${baseUrl}`);
+      return path || '';
+    }
+    
+    if (!path || typeof path !== 'string') {
+      return baseUrl;
+    }
     
     try {
-      const baseUrlObj = new URL(baseUrl);
+      // Convert inputs to strings to ensure no object contamination
+      const safeBaseUrl = String(baseUrl).trim();
+      const safePath = String(path).trim();
+      
+      const baseUrlObj = new URL(safeBaseUrl);
       const protocol = baseUrlObj.protocol;
       const hostname = baseUrlObj.hostname;
       const port = baseUrlObj.port;
       
       // Construct the full URL with consistent protocol
       const portPart = port ? `:${port}` : '';
-      const fullUrl = `${protocol}//${hostname}${portPart}${path}`;
+      const fullUrl = `${protocol}//${hostname}${portPart}${safePath}`;
       
-      console.log(`🔧 Protocol consistency check: ${baseUrl} + ${path} = ${fullUrl}`);
-      return fullUrl;
+      console.log(`🔧 Protocol consistency: ${safeBaseUrl} + ${safePath} = ${fullUrl}`);
+      
+      // Validate the generated URL before returning
+      try {
+        new URL(fullUrl); // Validation check
+        return fullUrl;
+      } catch (validationError) {
+        console.warn(`⚠️ Generated URL validation failed: ${fullUrl}`);
+        return `${safeBaseUrl}${safePath}`;
+      }
+      
     } catch (error) {
-      console.warn(`⚠️ URL parsing error for ${baseUrl}: ${error.message}`);
-      return `${baseUrl}${path}`; // Fallback to simple concatenation
+      // Enhanced error handling that won't interfere with JSON operations
+      console.error(`❌ URL processing error for ${baseUrl}:`, error.message);
+      // Safe fallback that preserves functionality
+      return path ? `${String(baseUrl)}${String(path)}` : String(baseUrl);
     }
   }
 
