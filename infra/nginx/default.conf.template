@@ -29,6 +29,51 @@ upstream keycloak_backend {
     keepalive 32;
 }
 
+upstream admin_config_backend {
+    server admin-config:3005;
+    keepalive 32;
+}
+
+upstream webhook_ingress_backend {
+    server webhook-ingress:3007;
+    keepalive 32;
+}
+
+upstream audit_backend {
+    server audit:3009;
+    keepalive 32;
+}
+
+upstream analytics_backend {
+    server analytics:3010;
+    keepalive 32;
+}
+
+upstream provisioning_backend {
+    server provisioning:3011;
+    keepalive 32;
+}
+
+upstream ldap_sync_backend {
+    server ldap-sync:3012;
+    keepalive 32;
+}
+
+upstream policy_backend {
+    server policy:3013;
+    keepalive 32;
+}
+
+upstream notifier_backend {
+    server notifier:3014;
+    keepalive 32;
+}
+
+upstream auth_proxy_backend {
+    server auth-proxy:3015;
+    keepalive 32;
+}
+
 # Lua initialization
 init_by_lua_block {
     -- OIDC configuration
@@ -283,11 +328,75 @@ server {
             include /etc/nginx/proxy_params;
         }
         
+        # Admin Configuration API (Catch both /api/admin-config/ and direct admin-config routes)
+        location /api/admin-config/ {
+            proxy_pass http://admin_config_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Webhook Ingress API
+        location /api/webhooks/ {
+            proxy_pass http://webhook_ingress_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Audit API
+        location /api/audit/ {
+            proxy_pass http://audit_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Analytics API
+        location /api/analytics/ {
+            proxy_pass http://analytics_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Provisioning API
+        location /api/provisioning/ {
+            proxy_pass http://provisioning_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # LDAP Sync API
+        location /api/ldap/ {
+            proxy_pass http://ldap_sync_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Policy API
+        location /api/policy/ {
+            proxy_pass http://policy_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Notifier API
+        location /api/notifications/ {
+            proxy_pass http://notifier_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Auth Proxy API
+        location /api/auth-proxy/ {
+            proxy_pass http://auth_proxy_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
         # Default API routing
         proxy_pass http://auth_bff_backend;
         include /etc/nginx/proxy_params;
     }
 
+    # Direct Admin-Config Service Access (bypass nginx auth for admin service)
+    location /admin-config/ {
+        proxy_pass http://admin_config_backend/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+    }
+    
     # Frontend routes - serve React app for SPA routing
     location ~ ^/(dashboard|tools|profile|admin|admin-tools|launchpad|health|webhooks|audit|analytics|ldap|provisioning)(/.*)?$ {
         # Optional OIDC authentication (don't fail if not authenticated)

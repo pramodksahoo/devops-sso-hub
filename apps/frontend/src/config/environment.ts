@@ -7,6 +7,7 @@
  */
 
 // Environment variables with fallbacks for development
+// These will be replaced by configure-external-access.sh for external deployments
 const {
   VITE_APP_TITLE = 'SSO Hub',
   VITE_FRONTEND_URL = 'http://localhost:3000',
@@ -171,6 +172,72 @@ export function getEnvironmentConfig() {
   const env = config.app.environment as keyof typeof environmentConfig;
   return environmentConfig[env] || environmentConfig.development;
 }
+
+/**
+ * Runtime URL resolver for external deployment compatibility
+ * Detects if we're on localhost or external host and constructs URLs accordingly
+ */
+export const runtimeUrlResolver = {
+  /**
+   * Get the current host information for dynamic URL construction
+   */
+  getCurrentHost: (): { protocol: string; hostname: string; isLocalhost: boolean } => {
+    if (typeof window === 'undefined') {
+      return { protocol: 'http', hostname: 'localhost', isLocalhost: true };
+    }
+    
+    const protocol = window.location.protocol.replace(':', '');
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
+    
+    return { protocol, hostname, isLocalhost };
+  },
+  
+  /**
+   * Resolve service URL at runtime - works for both localhost and external deployments
+   */
+  resolveServiceUrl: (port: string, envVarValue?: string): string => {
+    // If environment variable is provided and not a localhost URL, use it
+    if (envVarValue && !envVarValue.includes('localhost') && !envVarValue.includes('127.0.0.1')) {
+      return envVarValue;
+    }
+    
+    const { protocol, hostname, isLocalhost } = runtimeUrlResolver.getCurrentHost();
+    
+    // For localhost development, use environment variables as-is
+    if (isLocalhost && envVarValue) {
+      return envVarValue;
+    }
+    
+    // For external deployment, construct URL using current host
+    return `${protocol}://${hostname}:${port}`;
+  },
+  
+  /**
+   * Get all resolved service URLs for current environment
+   */
+  getResolvedConfig: () => {
+    return {
+      frontend: runtimeUrlResolver.resolveServiceUrl('3000', config.urls.frontend),
+      authBff: runtimeUrlResolver.resolveServiceUrl('3002', config.urls.authBff),
+      api: `${runtimeUrlResolver.resolveServiceUrl('3002', config.urls.authBff)}/api`,
+      userService: runtimeUrlResolver.resolveServiceUrl('3003', config.services.user),
+      toolsService: runtimeUrlResolver.resolveServiceUrl('3004', config.services.tools),
+      adminConfig: runtimeUrlResolver.resolveServiceUrl('3005', config.services.adminConfig),
+      catalog: runtimeUrlResolver.resolveServiceUrl('3006', config.services.catalog),
+      webhookIngress: runtimeUrlResolver.resolveServiceUrl('3007', config.services.webhookIngress),
+      audit: runtimeUrlResolver.resolveServiceUrl('3009', config.services.audit),
+      analytics: runtimeUrlResolver.resolveServiceUrl('3010', config.services.analytics),
+      provisioning: runtimeUrlResolver.resolveServiceUrl('3011', config.services.provisioning),
+      ldapSync: runtimeUrlResolver.resolveServiceUrl('3012', config.services.ldapSync),
+      policy: runtimeUrlResolver.resolveServiceUrl('3013', config.services.policy),
+      notifier: runtimeUrlResolver.resolveServiceUrl('3014', config.services.notifier),
+      keycloak: runtimeUrlResolver.resolveServiceUrl('8080', config.external.keycloak),
+      grafana: runtimeUrlResolver.resolveServiceUrl('3100', config.external.grafana),
+      prometheus: runtimeUrlResolver.resolveServiceUrl('9090', config.external.prometheus)
+    };
+  }
+};
 
 /**
  * Utility functions for URL construction

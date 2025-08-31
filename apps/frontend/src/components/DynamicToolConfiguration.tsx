@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, EyeOff, Lock, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { getToolConfigSchema, convertFlatToNested, convertNestedToFlat, validateConfigurationField, BaseConfigField, ToolConfigSchema } from './ToolConfigurationSchemas';
-import { config } from '../config/environment';
+import { config, runtimeUrlResolver } from '../config/environment';
 
 interface DynamicToolConfigurationProps {
   tool: {
@@ -149,7 +149,8 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
       const testConfig = convertFlatToNested(formData);
       console.log('🔄 Converted flat form data to nested config for test:', testConfig);
 
-      const response = await fetch(`${config.services.adminConfig}/tools/${tool.id}/test-connection`, {
+      const adminConfigUrl = runtimeUrlResolver.resolveServiceUrl('3005', config.services.adminConfig);
+      const response = await fetch(`${adminConfigUrl}/tools/${tool.id}/test-connection`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -185,7 +186,8 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
     try {
       console.log(`Auto-populating ${integrationType} config for tool: ${tool.slug}`);
       
-      const response = await fetch(`${config.services.adminConfig}/keycloak/config/${integrationType}?tool=${tool.slug}`, {
+      const adminConfigUrl = runtimeUrlResolver.resolveServiceUrl('3005', config.services.adminConfig);
+      const response = await fetch(`${adminConfigUrl}/keycloak/config/${integrationType}?tool=${tool.slug}`, {
         credentials: 'include',
         headers: {
           'Accept': 'application/json'

@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Loading } from '../components/ui/loading';
 import DynamicToolConfiguration from '../components/DynamicToolConfiguration';
-import { config as envConfig } from '../config/environment';
+import { config as envConfig, runtimeUrlResolver } from '../config/environment';
 import { 
   Settings, 
   AlertCircle, 
@@ -291,8 +291,9 @@ const AdminToolManagement: React.FC<AdminToolManagementProps> = ({ onNavigate })
     try {
       console.log('🔧 Updating tool configuration:', configTool.id, configData);
       
-      // CRITICAL FIX: Use admin-config service endpoint with Keycloak sync
-      const response = await fetch(`${envConfig.services.adminConfig}/api/tools/${configTool.slug}/config`, {
+      // CRITICAL FIX: Use admin-config service endpoint with Keycloak sync - External deployment compatible
+      const adminConfigUrl = runtimeUrlResolver.resolveServiceUrl('3005', envConfig.services.adminConfig);
+      const response = await fetch(`${adminConfigUrl}/api/tools/${configTool.slug}/config`, {
         method: 'PUT',
         headers: {
           'Accept': 'application/json',

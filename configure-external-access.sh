@@ -361,6 +361,7 @@ update_frontend_env_config() {
         -e "s|^VITE_LDAP_SYNC_URL=.*|VITE_LDAP_SYNC_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3012|" \
         -e "s|^VITE_POLICY_URL=.*|VITE_POLICY_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3013|" \
         -e "s|^VITE_NOTIFIER_URL=.*|VITE_NOTIFIER_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3014|" \
+        -e "s|^VITE_AUTH_PROXY_URL=.*|VITE_AUTH_PROXY_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3015|" \
         -e "s|^VITE_GRAFANA_URL=.*|VITE_GRAFANA_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3100|" \
         -e "s|^VITE_PROMETHEUS_URL=.*|VITE_PROMETHEUS_URL=${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:9090|" \
         "$frontend_env_file"
@@ -403,7 +404,7 @@ update_env_config() {
         -e "s|^EXTERNAL_PROTOCOL=.*|EXTERNAL_PROTOCOL=$EXTERNAL_PROTOCOL|" \
         -e "s|^EXTERNAL_PORT=.*|EXTERNAL_PORT=$EXTERNAL_PORT|" \
         -e "s|^FRONTEND_URL=.*|FRONTEND_URL=$FULL_FRONTEND_URL|" \
-        -e "s|^CORS_ORIGIN=.*|CORS_ORIGIN=$FULL_FRONTEND_URL|" \
+        -e "s|^CORS_ORIGIN=.*|CORS_ORIGIN=http://localhost:3000,$FULL_FRONTEND_URL|" \
         -e "s|^KC_HOSTNAME_URL=.*|KC_HOSTNAME_URL=$FULL_KEYCLOAK_URL|" \
         -e "s|^KC_HOSTNAME_ADMIN_URL=.*|KC_HOSTNAME_ADMIN_URL=$FULL_KEYCLOAK_URL|" \
         -e "s|^KEYCLOAK_PUBLIC_URL=.*|KEYCLOAK_PUBLIC_URL=$FULL_KEYCLOAK_URL/realms/sso-hub|" \
@@ -435,10 +436,15 @@ restart_containers_for_external_config() {
     print_step "Restarting containers to apply external configuration..."
     
     # Only restart containers that need environment variable updates
-    print_info "Recreating auth-bff and nginx with new environment variables..."
+    print_info "Recreating services with new environment variables..."
     
     # Force recreate containers with updated environment variables
     # This ensures containers pick up new EXTERNAL_HOST, EXTERNAL_PROTOCOL, and other config
+    print_info "Restarting frontend with external VITE_* variables..."
+    EXTERNAL_HOST="$EXTERNAL_HOST" EXTERNAL_PROTOCOL="$EXTERNAL_PROTOCOL" EXTERNAL_PORT="$EXTERNAL_PORT" \
+        docker-compose up -d frontend --force-recreate
+    sleep 15
+    
     print_info "Restarting auth-bff with external configuration..."
     EXTERNAL_HOST="$EXTERNAL_HOST" EXTERNAL_PROTOCOL="$EXTERNAL_PROTOCOL" EXTERNAL_PORT="$EXTERNAL_PORT" \
         docker-compose up -d auth-bff --force-recreate
@@ -451,7 +457,15 @@ restart_containers_for_external_config() {
     
     # Verify containers are healthy
     local services_restarted=0
-    local total_services=2
+    local total_services=3
+    
+    # Check frontend
+    if curl -sf --max-time 10 "http://localhost:3000/" >/dev/null 2>&1; then
+        print_success "✅ frontend restarted successfully"
+        services_restarted=$((services_restarted + 1))
+    else
+        print_error "❌ frontend failed to restart properly"
+    fi
     
     # Check auth-bff
     if curl -sf --max-time 10 "http://localhost:3002/healthz" >/dev/null 2>&1; then
