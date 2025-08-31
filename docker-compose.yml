@@ -949,6 +949,26 @@ services:
         condition: service_started
       tools-service:
         condition: service_started
+      admin-config:
+        condition: service_started
+      catalog:
+        condition: service_started
+      webhook-ingress:
+        condition: service_started
+      audit:
+        condition: service_started
+      analytics:
+        condition: service_started
+      provisioning:
+        condition: service_started
+      ldap-sync:
+        condition: service_started
+      auth-proxy:
+        condition: service_started
+      policy:
+        condition: service_started
+      notifier:
+        condition: service_started
     volumes:
       - ./infra/nginx/logs:/var/log/nginx
       - ./infra/nginx/ssl:/etc/nginx/ssl:ro

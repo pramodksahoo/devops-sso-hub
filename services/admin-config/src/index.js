@@ -364,14 +364,14 @@ fastify.put('/api/tools/:tool_type/config', {
     // (Removed complex validateProtocolConsistency that was causing JSON parsing errors)
     
     // Basic URL format validation for common tool URLs
-    const urlFields = {
+    const validationUrlFields = {
       grafana_url: completeConfigData.grafana_url,
       jenkins_url: completeConfigData.jenkins_url,
       base_url: completeConfigData.base_url,
       instance_url: completeConfigData.instance_url
     };
     
-    for (const [fieldName, url] of Object.entries(urlFields)) {
+    for (const [fieldName, url] of Object.entries(validationUrlFields)) {
       if (url && typeof url === 'string') {
         // Simple URL format check without complex parsing
         if (!url.match(/^https?:\/\/.+/)) {
@@ -1499,8 +1499,8 @@ fastify.put('/debug/config/:tool_type', async (request, reply) => {
     
     // Determine base URL for the tool
     let baseUrl;
-    const urlFields = [`${tool_type}_url`, 'url', 'base_url', 'grafana_url', 'jenkins_url', 'argocd_url'];
-    for (const field of urlFields) {
+    const debugUrlFields = [`${tool_type}_url`, 'url', 'base_url', 'grafana_url', 'jenkins_url', 'argocd_url'];
+    for (const field of debugUrlFields) {
       if (rawConfigData[field]) {
         baseUrl = rawConfigData[field];
         break;
