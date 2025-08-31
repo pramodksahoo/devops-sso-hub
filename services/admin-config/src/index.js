@@ -39,11 +39,63 @@ function parseMultilineField(value) {
              .filter(item => item.length > 0);
 }
 
-// Helper function to debug field processing
+// CRITICAL FIX: Safe JSON serialization helper function
+function safeJSONStringify(obj, label = '', maxDepth = 3) {
+  if (obj === null || obj === undefined) {
+    return 'null';
+  }
+  
+  try {
+    // Handle simple types
+    if (typeof obj !== 'object') {
+      return String(obj);
+    }
+    
+    // Handle arrays and objects with circular reference protection
+    const seen = new WeakSet();
+    const result = JSON.stringify(obj, (key, value) => {
+      // Handle circular references
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[Circular Reference]';
+        }
+        seen.add(value);
+      }
+      
+      // Handle functions
+      if (typeof value === 'function') {
+        return '[Function]';
+      }
+      
+      return value;
+    }, 2);
+    
+    return result;
+  } catch (error) {
+    // Fallback to safe object inspection
+    try {
+      if (Array.isArray(obj)) {
+        return `[Array with ${obj.length} items]`;
+      }
+      
+      if (typeof obj === 'object') {
+        const keys = Object.keys(obj).slice(0, 5); // Show first 5 keys
+        const keyStr = keys.length > 0 ? `keys: ${keys.join(', ')}` : 'empty object';
+        return `{Object: ${keyStr}${Object.keys(obj).length > 5 ? '...' : ''}}`;
+      }
+      
+      return `[${typeof obj}]`;
+    } catch (fallbackError) {
+      return `[Serialization Error: ${error.message}]`;
+    }
+  }
+}
+
+// Helper function to debug field processing with safe JSON
 function debugFieldProcessing(fieldName, userValue, processedValue) {
   console.log(`🔍 Debug ${fieldName}:`);
-  console.log(`   - User provided: ${JSON.stringify(userValue)}`);
-  console.log(`   - Processed to: ${JSON.stringify(processedValue)}`);
+  console.log(`   - User provided: ${safeJSONStringify(userValue)}`);
+  console.log(`   - Processed to: ${safeJSONStringify(processedValue)}`);
 }
 
 // CRITICAL FIX: Protocol validation helper function
@@ -151,6 +203,12 @@ function validateProtocolConsistency(toolConfig, toolType) {
     }
     
     console.log(`🔍 Protocol validation for ${toolType} - Errors: ${errors.length}, Warnings: ${warnings.length}`);
+    if (errors.length > 0) {
+      console.log(`   Protocol validation errors: ${safeJSONStringify(errors)}`);
+    }
+    if (warnings.length > 0) {
+      console.log(`   Protocol validation warnings: ${safeJSONStringify(warnings)}`);
+    }
     
     return {
       valid: errors.length === 0,
@@ -372,6 +430,31 @@ fastify.put('/api/tools/:tool_type/config', {
   const requestBody = request.body;
   
   try {
+    // CRITICAL FIX: Early validation to catch JSON parsing issues
+    if (!requestBody || typeof requestBody !== 'object') {
+      reply.status(400);
+      return {
+        success: false,
+        error: 'Invalid request body - must be valid JSON object',
+        error_type: 'json_parse_error',
+        details: 'Request body is null, undefined, or not an object',
+        suggestion: 'Ensure you are sending a valid JSON object in the request body'
+      };
+    }
+    
+    // Test JSON serialization early to catch circular reference issues
+    try {
+      JSON.stringify(requestBody);
+    } catch (jsonError) {
+      reply.status(400);
+      return {
+        success: false,
+        error: 'Request contains non-serializable data',
+        error_type: 'json_serialization_error',
+        details: jsonError.message,
+        suggestion: 'Remove circular references or functions from configuration data'
+      };
+    }
     // Import tool defaults system
     const { mergeWithDefaults } = require('./schemas/tool-defaults');
     
@@ -381,7 +464,7 @@ fastify.put('/api/tools/:tool_type/config', {
     const providedIntegrationType = requestBody.integration_type;
     
     console.log(`🔧 Processing ${tool_type} configuration with integration type: ${providedIntegrationType}`);
-    console.log(`📥 Raw config data:`, JSON.stringify(rawConfigData, null, 2));
+    console.log(`📥 Raw config data: ${safeJSONStringify(rawConfigData, 'rawConfigData')}`);
     
     // Determine base URL for the tool (extract from common patterns)
     let baseUrl;
@@ -401,7 +484,7 @@ fastify.put('/api/tools/:tool_type/config', {
       baseUrl
     );
     
-    console.log(`✅ Complete config after merging defaults:`, JSON.stringify(completeConfigData, null, 2));
+    console.log(`✅ Complete config after merging defaults: ${safeJSONStringify(completeConfigData, 'completeConfigData')}`);
     
     // CRITICAL FIX: Protocol consistency validation before saving
     const protocolValidation = validateProtocolConsistency(completeConfigData, tool_type);
@@ -502,7 +585,7 @@ fastify.put('/api/tools/:tool_type/config', {
           // Generate default redirect URIs only if not provided
           const grafanaUrl = validatedConfig.grafana_url || 'http://localhost:3100';
           updateFields.redirectUris = [`${grafanaUrl}/login/generic_oauth`];
-          console.log(`🔧 Generated default redirect URIs: ${JSON.stringify(updateFields.redirectUris)}`);
+          console.log(`🔧 Generated default redirect URIs: ${safeJSONStringify(updateFields.redirectUris)}`);
         }
         
         // UI: Web Origins -> Keycloak: webOrigins  
@@ -514,7 +597,7 @@ fastify.put('/api/tools/:tool_type/config', {
           // Generate default web origins only if not provided
           const grafanaUrl = validatedConfig.grafana_url || 'http://localhost:3100';
           updateFields.webOrigins = [grafanaUrl];
-          console.log(`🔧 Generated default web origins: ${JSON.stringify(updateFields.webOrigins)}`);
+          console.log(`🔧 Generated default web origins: ${safeJSONStringify(updateFields.webOrigins)}`);
         }
         
         // UI: Client Secret -> Keycloak: secret
@@ -526,7 +609,7 @@ fastify.put('/api/tools/:tool_type/config', {
         updateFields.name = `Grafana Client`;
         updateFields.description = `OAuth2 client for Grafana integration`;
         
-        console.log(`🔄 Prepared updateFields for ${tool_type}:`, JSON.stringify(updateFields, null, 2));
+        console.log(`🔄 Prepared updateFields for ${tool_type}: ${safeJSONStringify(updateFields)}`);
         
         // ATOMIC SYNC OPERATION: Get original state for rollback
         const originalClient = await keycloakService.getClient(clientId);
@@ -1501,7 +1584,7 @@ fastify.put('/debug/config/:tool_type', async (request, reply) => {
   
   try {
     console.log(`🐛 Debug: Testing complete configuration flow for ${tool_type}`);
-    console.log(`🐛 Debug: Request body:`, JSON.stringify(requestBody, null, 2));
+    console.log(`🐛 Debug: Request body: ${safeJSONStringify(requestBody)}`);
     
     // Import tool defaults system
     const { mergeWithDefaults } = require('./schemas/tool-defaults');
@@ -1510,7 +1593,7 @@ fastify.put('/debug/config/:tool_type', async (request, reply) => {
     const rawConfigData = requestBody.auth_config || requestBody;
     const providedIntegrationType = requestBody.integration_type;
     
-    console.log(`🐛 Debug: Raw config data:`, JSON.stringify(rawConfigData, null, 2));
+    console.log(`🐛 Debug: Raw config data: ${safeJSONStringify(rawConfigData)}`);
     console.log(`🐛 Debug: Provided integration type: ${providedIntegrationType}`);
     
     // Determine base URL for the tool
@@ -1532,7 +1615,7 @@ fastify.put('/debug/config/:tool_type', async (request, reply) => {
       baseUrl
     );
     
-    console.log(`🐛 Debug: Complete config after merging defaults:`, JSON.stringify(completeConfigData, null, 2));
+    console.log(`🐛 Debug: Complete config after merging defaults: ${safeJSONStringify(completeConfigData)}`);
     
     // Test Keycloak client validation
     const clientValidation = await keycloakService.validateClientExists(tool_type, providedIntegrationType);

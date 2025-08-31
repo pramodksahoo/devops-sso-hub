@@ -302,7 +302,9 @@ class KeycloakService {
     
     console.log(`🔍 Debug getRedirectUris - toolType: ${toolType}, toolConfig keys:`, Object.keys(toolConfig));
     console.log(`🔍 Debug getRedirectUris - toolConfig.redirect_uri:`, toolConfig.redirect_uri);
-    console.log(`🔍 Debug getRedirectUris - full toolConfig:`, JSON.stringify(toolConfig, null, 2));
+    // CRITICAL FIX: Safe logging for complex toolConfig object
+    console.log(`🔍 Debug getRedirectUris - toolConfig keys: ${Object.keys(toolConfig).join(', ')}`);
+    console.log(`🔍 Debug getRedirectUris - grafana_url: ${toolConfig.grafana_url}, base_url: ${toolConfig.base_url}`);
     
     // CRITICAL FIX: Check for explicit redirect_uri in config first
     if (toolConfig.redirect_uri) {
@@ -377,7 +379,9 @@ class KeycloakService {
     
     console.log(`🔍 Debug getWebOrigins - toolType: ${toolType}, toolConfig keys:`, Object.keys(toolConfig));
     console.log(`🔍 Debug getWebOrigins - toolConfig.web_origins:`, toolConfig.web_origins);
-    console.log(`🔍 Debug getWebOrigins - full toolConfig:`, JSON.stringify(toolConfig, null, 2));
+    // CRITICAL FIX: Safe logging for complex toolConfig object
+    console.log(`🔍 Debug getWebOrigins - toolConfig keys: ${Object.keys(toolConfig).join(', ')}`);
+    console.log(`🔍 Debug getWebOrigins - web_origins: ${toolConfig.web_origins}, base_url: ${toolConfig.base_url}`);
     
     // CRITICAL FIX: Check for explicit web_origins in config first
     if (toolConfig.web_origins) {
@@ -493,7 +497,7 @@ class KeycloakService {
           : typeof redirectUris === 'string'
             ? redirectUris.split('\n').map(uri => uri.trim()).filter(uri => uri)
             : [redirectUris];
-        console.log(`📝 Updating Redirect URIs: ${JSON.stringify(updatePayload.redirectUris)}`);
+        console.log(`📝 Updating Redirect URIs: [${updatePayload.redirectUris?.join(', ') || 'none'}]`);
       }
       
       // Web Origins mapping (UI: Web Origins -> Keycloak: webOrigins)  
@@ -504,7 +508,7 @@ class KeycloakService {
           : typeof webOrigins === 'string'
             ? webOrigins.split('\n').map(origin => origin.trim()).filter(origin => origin)
             : [webOrigins];
-        console.log(`📝 Updating Web Origins: ${JSON.stringify(updatePayload.webOrigins)}`);
+        console.log(`📝 Updating Web Origins: [${updatePayload.webOrigins?.join(', ') || 'none'}]`);
       }
       
       // Client Secret mapping (if provided)
@@ -529,7 +533,9 @@ class KeycloakService {
         return client;
       }
       
-      console.log(`🔄 Final update payload for ${clientId}:`, JSON.stringify(updatePayload, null, 2));
+      // CRITICAL FIX: Safe logging for update payload
+      console.log(`🔄 Final update payload for ${clientId} - fields: ${Object.keys(updatePayload).join(', ')}`);
+      console.log(`🔄 Root URL: ${updatePayload.rootUrl}, Redirect URIs count: ${updatePayload.redirectUris?.length || 0}`);
       
       // Update the client in Keycloak
       await this.makeRequest('PUT', `/clients/${client.id}`, updatePayload);

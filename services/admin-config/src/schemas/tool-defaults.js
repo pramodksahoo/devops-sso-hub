@@ -486,12 +486,41 @@ function mergeWithDefaults(toolType, integrationType, userConfig, baseUrl) {
     return result;
   }
   
+  // CRITICAL FIX: Safe JSON serialization helper function (duplicate from main service)
+  function safeJSONStringify(obj, maxDepth = 2) {
+    if (obj === null || obj === undefined) return 'null';
+    if (typeof obj !== 'object') return String(obj);
+    
+    try {
+      const seen = new WeakSet();
+      return JSON.stringify(obj, (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) return '[Circular Reference]';
+          seen.add(value);
+        }
+        if (typeof value === 'function') return '[Function]';
+        return value;
+      }, 2);
+    } catch (error) {
+      try {
+        if (Array.isArray(obj)) return `[Array with ${obj.length} items]`;
+        if (typeof obj === 'object') {
+          const keys = Object.keys(obj).slice(0, 3);
+          return `{Object: ${keys.join(', ')}${Object.keys(obj).length > 3 ? '...' : ''}}`;
+        }
+        return `[${typeof obj}]`;
+      } catch (fallbackError) {
+        return `[Serialization Error: ${error.message}]`;
+      }
+    }
+  }
+  
   console.log(`🔄 Merging user config with defaults for ${toolType}:${integrationType}`);
-  console.log(`📋 Defaults:`, JSON.stringify(defaults, null, 2));
-  console.log(`👤 User config:`, JSON.stringify(userConfig, null, 2));
+  console.log(`📋 Defaults: ${safeJSONStringify(defaults)}`);
+  console.log(`👤 User config: ${safeJSONStringify(userConfig)}`);
   
   const merged = deepMerge(defaults, userConfig);
-  console.log(`✅ Merged config:`, JSON.stringify(merged, null, 2));
+  console.log(`✅ Merged config: ${safeJSONStringify(merged)}`);
   
   return merged;
 }
