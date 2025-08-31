@@ -67,5 +67,78 @@ module.exports = {
     WEBHOOK_PROCESSING: process.env.FEATURE_WEBHOOK_PROCESSING !== 'false',
     LAUNCH_ANALYTICS: process.env.FEATURE_LAUNCH_ANALYTICS !== 'false',
     TOOL_HEALTH_CHECKS: process.env.FEATURE_TOOL_HEALTH_CHECKS !== 'false'
+  },
+
+  // External deployment configuration
+  EXTERNAL_HOST: process.env.EXTERNAL_HOST,
+  EXTERNAL_PROTOCOL: process.env.EXTERNAL_PROTOCOL || 'http',
+
+  /**
+   * Protocol-aware URL resolution helpers
+   * Prioritizes tool-specific protocols over global infrastructure protocols
+   */
+  
+  /**
+   * Extract protocol from a tool's configured URL
+   * @param {Object} toolConfig - Tool configuration object
+   * @returns {string} Protocol (http: or https:)
+   */
+  extractToolProtocol: (toolConfig) => {
+    if (!toolConfig || typeof toolConfig !== 'object') {
+      return 'http:';
+    }
+
+    // Check tool-specific URL fields for protocol
+    const urlFields = [
+      'grafana_url', 'base_url', 'instance_url', 'jenkins_url', 
+      'argocd_url', 'sonarqube_url', 'kibana_url'
+    ];
+
+    for (const field of urlFields) {
+      if (toolConfig[field]) {
+        try {
+          const url = new URL(toolConfig[field]);
+          return url.protocol; // Returns 'http:' or 'https:'
+        } catch (error) {
+          // Invalid URL, continue to next field
+          continue;
+        }
+      }
+    }
+
+    // Fallback to infrastructure protocol if no tool-specific URL found
+    return process.env.INFRASTRUCTURE_PROTOCOL ? `${process.env.INFRASTRUCTURE_PROTOCOL}:` : 'http:';
+  },
+
+  /**
+   * Generate protocol-aware base URL for a tool
+   * Respects tool's configured protocol, independent of global infrastructure protocol
+   * @param {Object} toolConfig - Tool configuration object
+   * @param {string} hostname - Hostname to use
+   * @param {number|string} port - Port to use (optional)
+   * @returns {string} Full base URL with correct protocol
+   */
+  generateProtocolAwareUrl: (toolConfig, hostname, port) => {
+    const protocol = module.exports.extractToolProtocol(toolConfig);
+    const portPart = port ? `:${port}` : '';
+    return `${protocol}//${hostname}${portPart}`;
+  },
+
+  /**
+   * Determine if we should use tool-specific protocol vs global protocol
+   * @param {Object} toolConfig - Tool configuration object
+   * @returns {boolean} True if tool has specific protocol configured
+   */
+  hasToolSpecificProtocol: (toolConfig) => {
+    if (!toolConfig || typeof toolConfig !== 'object') {
+      return false;
+    }
+
+    const urlFields = [
+      'grafana_url', 'base_url', 'instance_url', 'jenkins_url',
+      'argocd_url', 'sonarqube_url', 'kibana_url'
+    ];
+
+    return urlFields.some(field => toolConfig[field] && toolConfig[field].includes('://'));
   }
 };

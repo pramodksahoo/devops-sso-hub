@@ -399,9 +399,9 @@ update_env_config() {
     local FULL_AUTH_BFF_URL="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3002"
     
     # Update .env file with all necessary external configuration
+    # IMPORTANT: Do not set EXTERNAL_PROTOCOL globally to preserve tool-specific protocols
     sed -i.tmp \
         -e "s|^EXTERNAL_HOST=.*|EXTERNAL_HOST=$EXTERNAL_HOST|" \
-        -e "s|^EXTERNAL_PROTOCOL=.*|EXTERNAL_PROTOCOL=$EXTERNAL_PROTOCOL|" \
         -e "s|^EXTERNAL_PORT=.*|EXTERNAL_PORT=$EXTERNAL_PORT|" \
         -e "s|^FRONTEND_URL=.*|FRONTEND_URL=$FULL_FRONTEND_URL|" \
         -e "s|^CORS_ORIGIN=.*|CORS_ORIGIN=http://localhost:3000,$FULL_FRONTEND_URL|" \
@@ -413,6 +413,15 @@ update_env_config() {
         -e "s|^OIDC_REDIRECT_URI=.*|OIDC_REDIRECT_URI=$FULL_AUTH_BFF_URL/auth/callback|" \
         .env
         
+    # Store the infrastructure protocol for infrastructure services only
+    # This allows tool-specific protocols to be preserved in the catalog service
+    sed -i.tmp -e "s|^INFRASTRUCTURE_PROTOCOL=.*|INFRASTRUCTURE_PROTOCOL=$EXTERNAL_PROTOCOL|" .env
+    
+    # Add the infrastructure protocol variable if it doesn't exist
+    if ! grep -q "^INFRASTRUCTURE_PROTOCOL=" .env; then
+        echo "INFRASTRUCTURE_PROTOCOL=$EXTERNAL_PROTOCOL" >> .env
+    fi
+        
     # Add missing environment variables if they don't exist
     if ! grep -q "^KC_HOSTNAME_URL=" .env; then
         echo "KC_HOSTNAME_URL=$FULL_KEYCLOAK_URL" >> .env
@@ -420,9 +429,8 @@ update_env_config() {
     if ! grep -q "^KC_HOSTNAME_ADMIN_URL=" .env; then
         echo "KC_HOSTNAME_ADMIN_URL=$FULL_KEYCLOAK_URL" >> .env
     fi
-    if ! grep -q "^EXTERNAL_PROTOCOL=" .env; then
-        echo "EXTERNAL_PROTOCOL=$EXTERNAL_PROTOCOL" >> .env
-    fi
+    # Do not add EXTERNAL_PROTOCOL to preserve tool-specific protocols
+    # Infrastructure protocol is stored in INFRASTRUCTURE_PROTOCOL instead
     if ! grep -q "^KEYCLOAK_EXTERNAL_URL=" .env; then
         echo "KEYCLOAK_EXTERNAL_URL=$FULL_KEYCLOAK_URL" >> .env
     fi

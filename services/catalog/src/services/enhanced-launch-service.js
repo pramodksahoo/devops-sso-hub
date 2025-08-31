@@ -347,9 +347,9 @@ class EnhancedLaunchService {
     return finalUrl;
   }
 
-  // CRITICAL FIX: Helper function to ensure protocol consistency in URLs  
-  // Enhanced with error boundaries to prevent JSON processing contamination
-  ensureProtocolConsistency(baseUrl, path = '') {
+  // CRITICAL FIX: Protocol-aware URL consistency function  
+  // Prioritizes tool-specific protocols over global infrastructure protocols
+  ensureProtocolConsistency(baseUrl, path = '', toolConfig = null) {
     // Input validation to prevent JSON processing issues
     if (!baseUrl || typeof baseUrl !== 'string') {
       this.fastify.log.warn(`Invalid baseUrl for protocol consistency: ${baseUrl}`);
@@ -362,15 +362,25 @@ class EnhancedLaunchService {
       const safePath = String(path).trim();
       
       const baseUrlObj = new URL(safeBaseUrl);
-      const protocol = baseUrlObj.protocol;
+      let protocol = baseUrlObj.protocol;
       const hostname = baseUrlObj.hostname;
       const port = baseUrlObj.port;
       
-      // Construct the full URL with consistent protocol
+      // PROTOCOL PRECEDENCE: Tool-specific protocol > Base URL protocol > Global protocol
+      if (toolConfig) {
+        const config = require('../config');
+        if (config.hasToolSpecificProtocol(toolConfig)) {
+          const toolProtocol = config.extractToolProtocol(toolConfig);
+          this.fastify.log.info(`🔧 Using tool-specific protocol: ${toolProtocol} (was ${protocol})`);
+          protocol = toolProtocol;
+        }
+      }
+      
+      // Construct the full URL with protocol-aware consistency
       const portPart = port ? `:${port}` : '';
       const fullUrl = `${protocol}//${hostname}${portPart}${safePath}`;
       
-      this.fastify.log.info(`🔧 Protocol consistency: ${safeBaseUrl} + ${safePath} = ${fullUrl}`);
+      this.fastify.log.info(`🔧 Protocol consistency: ${safeBaseUrl} + ${safePath} = ${fullUrl} (tool-aware)`);
       
       // Validate the generated URL before returning
       try {
@@ -433,7 +443,7 @@ class EnhancedLaunchService {
     if (!redirectUri) {
       // Construct redirect URI with protocol consistency
       const grafanaUrl = authConfig.grafana_url || baseUrl || 'http://localhost:3100';
-      redirectUri = this.ensureProtocolConsistency(grafanaUrl, '/login/generic_oauth');
+      redirectUri = this.ensureProtocolConsistency(grafanaUrl, '/login/generic_oauth', authConfig);
     }
     this.fastify.log.info(`🔐 Using Grafana redirect URI: ${redirectUri}`);
     
