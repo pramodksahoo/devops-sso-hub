@@ -198,22 +198,23 @@ const toolDefaults = {
         grafana_url: baseUrl,
         oauth: getOAuth2Defaults('grafana', baseUrl),
         admin_credentials: getAdminCredentialsDefaults('grafana'),
-      org_management: {
-        enabled: true,
-        auto_assign_org: true,
-        auto_assign_org_id: 1,
-        auto_assign_org_role: 'Viewer',
-        skip_org_role_update_sync: false
-      },
-      team_sync: {
-        enabled: false,
-        sync_ttl: 60
-      },
-      security: {
-        tls_skip_verify_insecure: false
-      },
-      keycloak: getKeycloakDefaults('grafana', baseUrl)
-    })
+        org_management: {
+          enabled: true,
+          auto_assign_org: true,
+          auto_assign_org_id: 1,
+          auto_assign_org_role: 'Viewer',
+          skip_org_role_update_sync: false
+        },
+        team_sync: {
+          enabled: false,
+          sync_ttl: 60
+        },
+        security: {
+          tls_skip_verify_insecure: false
+        },
+        keycloak: getKeycloakDefaults('grafana', baseUrl)
+      });
+    }
   },
   
   jenkins: {
