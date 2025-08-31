@@ -214,6 +214,21 @@ export const runtimeUrlResolver = {
   },
   
   /**
+   * Resolve admin-config service URL - uses nginx proxy for external deployments
+   */
+  resolveAdminConfigUrl: (envVarValue?: string): string => {
+    const { protocol, hostname, isLocalhost } = runtimeUrlResolver.getCurrentHost();
+    
+    // For localhost development, use direct service access
+    if (isLocalhost) {
+      return envVarValue || `http://localhost:3005`;
+    }
+    
+    // For external deployment, use nginx proxy to avoid CORS issues
+    return `${protocol}://${hostname}`;
+  },
+  
+  /**
    * Get all resolved service URLs for current environment
    */
   getResolvedConfig: () => {

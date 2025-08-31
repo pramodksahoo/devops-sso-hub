@@ -149,12 +149,15 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
       const testConfig = convertFlatToNested(formData);
       console.log('🔄 Converted flat form data to nested config for test:', testConfig);
 
-      const adminConfigUrl = runtimeUrlResolver.resolveServiceUrl('3005', config.services.adminConfig);
-      const response = await fetch(`${adminConfigUrl}/tools/${tool.id}/test-connection`, {
+      const adminConfigUrl = runtimeUrlResolver.resolveAdminConfigUrl(config.services.adminConfig);
+      const { isLocalhost } = runtimeUrlResolver.getCurrentHost();
+      const endpoint = isLocalhost ? '/api/tools/' : '/api/admin-config/tools/';
+      const response = await fetch(`${adminConfigUrl}${endpoint}${tool.slug}/test-connection`, {
         method: 'POST',
         credentials: 'include',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Api-Key': 'admin-api-key-change-in-production'
         },
         body: JSON.stringify({
           integration_type: integrationType,
@@ -186,8 +189,10 @@ const DynamicToolConfiguration: React.FC<DynamicToolConfigurationProps> = ({
     try {
       console.log(`Auto-populating ${integrationType} config for tool: ${tool.slug}`);
       
-      const adminConfigUrl = runtimeUrlResolver.resolveServiceUrl('3005', config.services.adminConfig);
-      const response = await fetch(`${adminConfigUrl}/keycloak/config/${integrationType}?tool=${tool.slug}`, {
+      const adminConfigUrl = runtimeUrlResolver.resolveAdminConfigUrl(config.services.adminConfig);
+      const { isLocalhost } = runtimeUrlResolver.getCurrentHost();
+      const endpoint = isLocalhost ? '/api/keycloak/config/' : '/api/admin-config/keycloak/config/';
+      const response = await fetch(`${adminConfigUrl}${endpoint}${integrationType}?tool=${tool.slug}`, {
         credentials: 'include',
         headers: {
           'Accept': 'application/json'

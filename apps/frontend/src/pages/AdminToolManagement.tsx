@@ -292,8 +292,10 @@ const AdminToolManagement: React.FC<AdminToolManagementProps> = ({ onNavigate })
       console.log('🔧 Updating tool configuration:', configTool.id, configData);
       
       // CRITICAL FIX: Use admin-config service endpoint with Keycloak sync - External deployment compatible
-      const adminConfigUrl = runtimeUrlResolver.resolveServiceUrl('3005', envConfig.services.adminConfig);
-      const response = await fetch(`${adminConfigUrl}/api/tools/${configTool.slug}/config`, {
+      const adminConfigUrl = runtimeUrlResolver.resolveAdminConfigUrl(envConfig.services.adminConfig);
+      const { isLocalhost } = runtimeUrlResolver.getCurrentHost();
+      const endpoint = isLocalhost ? '/api/tools/' : '/api/admin-config/tools/';
+      const response = await fetch(`${adminConfigUrl}${endpoint}${configTool.slug}/config`, {
         method: 'PUT',
         headers: {
           'Accept': 'application/json',

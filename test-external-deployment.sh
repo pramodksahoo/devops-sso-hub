@@ -86,27 +86,31 @@ test_service() {
 test_tools_configuration() {
     print_step "Testing Tools Configuration API (Admin-Config Service)"
     
-    local admin_config_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3005"
+    # Test both direct service access and nginx proxy access
+    local admin_config_direct_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3005"
+    local admin_config_proxy_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}"
     local api_key="admin-api-key-change-in-production"
     
-    # Test 1: Get all tools
-    print_step "  → Testing GET /api/tools"
+    # Test 1: Get all tools via nginx proxy (preferred for external deployments)
+    print_step "  → Testing GET /api/admin-config/tools (via nginx proxy)"
     local response=$(curl -s -w "HTTPSTATUS:%{http_code}" \
         -H "X-Api-Key: $api_key" \
         -H "Accept: application/json" \
-        "$admin_config_url/api/tools" 2>/dev/null)
+        -H "Origin: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3000" \
+        "$admin_config_proxy_url/api/admin-config/tools" 2>/dev/null)
     
     local http_code=$(echo "$response" | grep -o "HTTPSTATUS:[0-9]*" | cut -d: -f2)
     local body=$(echo "$response" | sed -E 's/HTTPSTATUS:[0-9]*$//')
     
     if [[ "$http_code" == "200" ]]; then
-        print_success "Admin-Config API is accessible"
+        print_success "Admin-Config API is accessible via nginx proxy"
         
-        # Test 2: Test auto-populate functionality
-        print_step "  → Testing auto-populate functionality"
+        # Test 2: Test auto-populate functionality via nginx proxy
+        print_step "  → Testing auto-populate functionality (via nginx proxy)"
         local populate_response=$(curl -s -w "HTTPSTATUS:%{http_code}" \
             -H "Accept: application/json" \
-            "$admin_config_url/api/keycloak/config/oauth2?tool=grafana" 2>/dev/null)
+            -H "Origin: ${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:3000" \
+            "$admin_config_proxy_url/api/admin-config/keycloak/config/oauth2?tool=grafana" 2>/dev/null)
         
         local populate_http_code=$(echo "$populate_response" | grep -o "HTTPSTATUS:[0-9]*" | cut -d: -f2)
         
@@ -114,6 +118,19 @@ test_tools_configuration() {
             print_success "Auto-populate functionality is working"
         else
             print_error "Auto-populate returned HTTP $populate_http_code"
+            
+            # Fallback test: Try direct service access
+            print_step "  → Fallback: Testing direct service access"
+            local direct_response=$(curl -s -w "HTTPSTATUS:%{http_code}" \
+                -H "Accept: application/json" \
+                "$admin_config_direct_url/api/keycloak/config/oauth2?tool=grafana" 2>/dev/null)
+            
+            local direct_http_code=$(echo "$direct_response" | grep -o "HTTPSTATUS:[0-9]*" | cut -d: -f2)
+            if [[ "$direct_http_code" == "200" ]]; then
+                print_success "Direct service access works (CORS may need configuration)"
+            else
+                print_error "Both proxy and direct access failed (HTTP $direct_http_code)"
+            fi
         fi
         
     elif [[ "$http_code" == "401" ]]; then

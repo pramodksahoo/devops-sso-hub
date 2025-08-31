@@ -328,11 +328,7 @@ server {
             include /etc/nginx/proxy_params;
         }
         
-        # Admin Configuration API (Catch both /api/admin-config/ and direct admin-config routes)
-        location /api/admin-config/ {
-            proxy_pass http://admin_config_backend/api/;
-            include /etc/nginx/proxy_params;
-        }
+        # Note: Admin Configuration API moved outside OIDC auth block
         
         # Webhook Ingress API
         location /api/webhooks/ {
@@ -387,6 +383,33 @@ server {
         include /etc/nginx/proxy_params;
     }
 
+    # Admin Configuration API Access (bypass OIDC auth, uses service API key auth)
+    location /api/admin-config/ {
+        proxy_pass http://admin_config_backend/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Enable CORS for admin-config API
+        add_header Access-Control-Allow-Origin "$http_origin" always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+        
+        # Handle preflight requests
+        if ($request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin "$http_origin";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key";
+            add_header Access-Control-Allow-Credentials "true";
+            add_header Content-Length 0;
+            add_header Content-Type text/plain;
+            return 204;
+        }
+    }
+    
     # Direct Admin-Config Service Access (bypass nginx auth for admin service)
     location /admin-config/ {
         proxy_pass http://admin_config_backend/;
