@@ -275,6 +275,28 @@ class KeycloakService {
     ];
   }
 
+  // Helper function to ensure protocol consistency in URLs
+  ensureProtocolConsistency(baseUrl, path) {
+    if (!baseUrl || !path) return path;
+    
+    try {
+      const baseUrlObj = new URL(baseUrl);
+      const protocol = baseUrlObj.protocol;
+      const hostname = baseUrlObj.hostname;
+      const port = baseUrlObj.port;
+      
+      // Construct the full URL with consistent protocol
+      const portPart = port ? `:${port}` : '';
+      const fullUrl = `${protocol}//${hostname}${portPart}${path}`;
+      
+      console.log(`🔧 Protocol consistency check: ${baseUrl} + ${path} = ${fullUrl}`);
+      return fullUrl;
+    } catch (error) {
+      console.warn(`⚠️ URL parsing error for ${baseUrl}: ${error.message}`);
+      return `${baseUrl}${path}`; // Fallback to simple concatenation
+    }
+  }
+
   getRedirectUris(toolType, toolConfig) {
     const baseUris = [];
     
@@ -319,9 +341,16 @@ class KeycloakService {
         
       case 'grafana':
         if (!toolConfig.redirect_uri && toolConfig.grafana_url) {
-          const grafanaUri = `${toolConfig.grafana_url}/login/generic_oauth`;
+          // CRITICAL FIX: Ensure protocol consistency for Grafana OIDC redirect URI
+          const grafanaUri = this.ensureProtocolConsistency(toolConfig.grafana_url, '/login/generic_oauth');
           baseUris.push(grafanaUri);
-          console.log(`✅ Added Grafana redirect URI: ${grafanaUri}`);
+          console.log(`✅ Added Grafana redirect URI with protocol consistency: ${grafanaUri}`);
+          console.log(`🔍 Original grafana_url: ${toolConfig.grafana_url}`);
+          
+          // Also add alternative OAuth callback endpoint as fallback
+          const altGrafanaUri = this.ensureProtocolConsistency(toolConfig.grafana_url, '/login/oauth2/callback');
+          baseUris.push(altGrafanaUri);
+          console.log(`✅ Added alternative Grafana redirect URI: ${altGrafanaUri}`);
         }
         break;
         

@@ -46,6 +46,130 @@ function debugFieldProcessing(fieldName, userValue, processedValue) {
   console.log(`   - Processed to: ${JSON.stringify(processedValue)}`);
 }
 
+// CRITICAL FIX: Protocol validation helper function
+function validateProtocolConsistency(toolConfig, toolType) {
+  const errors = [];
+  const warnings = [];
+  
+  try {
+    // Extract all URL fields for the tool
+    const urlFields = {
+      'grafana_url': toolConfig.grafana_url,
+      'jenkins_url': toolConfig.jenkins_url,
+      'argocd_url': toolConfig.argocd_url,
+      'gitlab_url': toolConfig.gitlab_url,
+      'sonarqube_url': toolConfig.sonarqube_url,
+      'base_url': toolConfig.base_url,
+      'instance_url': toolConfig.instance_url
+    };
+    
+    // Get the main tool URL (first non-null URL)
+    let baseProtocol = null;
+    let baseUrlField = null;
+    
+    for (const [field, url] of Object.entries(urlFields)) {
+      if (url) {
+        try {
+          const urlObj = new URL(url);
+          baseProtocol = urlObj.protocol;
+          baseUrlField = field;
+          console.log(`🔍 Protocol validation - Base protocol from ${field}: ${baseProtocol}`);
+          break;
+        } catch (urlError) {
+          errors.push(`Invalid URL format in ${field}: ${url}`);
+        }
+      }
+    }
+    
+    if (!baseProtocol) {
+      warnings.push('No valid URLs found for protocol validation');
+      return { valid: true, errors, warnings };
+    }
+    
+    // Check Keycloak configuration consistency
+    if (toolConfig.keycloak) {
+      const keycloakConfig = toolConfig.keycloak;
+      
+      // Validate redirect URIs
+      if (keycloakConfig.redirect_uris) {
+        const redirectUris = Array.isArray(keycloakConfig.redirect_uris) 
+          ? keycloakConfig.redirect_uris 
+          : [keycloakConfig.redirect_uris];
+          
+        for (const uri of redirectUris) {
+          try {
+            const uriObj = new URL(uri);
+            if (uriObj.protocol !== baseProtocol) {
+              errors.push(`Protocol mismatch: redirect URI ${uri} uses ${uriObj.protocol} but base URL uses ${baseProtocol}`);
+            }
+          } catch (uriError) {
+            errors.push(`Invalid redirect URI format: ${uri}`);
+          }
+        }
+      }
+      
+      // Validate web origins
+      if (keycloakConfig.web_origins) {
+        const webOrigins = Array.isArray(keycloakConfig.web_origins) 
+          ? keycloakConfig.web_origins 
+          : [keycloakConfig.web_origins];
+          
+        for (const origin of webOrigins) {
+          try {
+            const originObj = new URL(origin);
+            if (originObj.protocol !== baseProtocol) {
+              warnings.push(`Protocol mismatch: web origin ${origin} uses ${originObj.protocol} but base URL uses ${baseProtocol}`);
+            }
+          } catch (originError) {
+            warnings.push(`Invalid web origin format: ${origin}`);
+          }
+        }
+      }
+      
+      // Validate root_url and home_url
+      if (keycloakConfig.root_url) {
+        try {
+          const rootUrlObj = new URL(keycloakConfig.root_url);
+          if (rootUrlObj.protocol !== baseProtocol) {
+            errors.push(`Protocol mismatch: root_url ${keycloakConfig.root_url} uses ${rootUrlObj.protocol} but base URL uses ${baseProtocol}`);
+          }
+        } catch (rootError) {
+          errors.push(`Invalid root_url format: ${keycloakConfig.root_url}`);
+        }
+      }
+      
+      if (keycloakConfig.home_url) {
+        try {
+          const homeUrlObj = new URL(keycloakConfig.home_url);
+          if (homeUrlObj.protocol !== baseProtocol) {
+            errors.push(`Protocol mismatch: home_url ${keycloakConfig.home_url} uses ${homeUrlObj.protocol} but base URL uses ${baseProtocol}`);
+          }
+        } catch (homeError) {
+          errors.push(`Invalid home_url format: ${keycloakConfig.home_url}`);
+        }
+      }
+    }
+    
+    console.log(`🔍 Protocol validation for ${toolType} - Errors: ${errors.length}, Warnings: ${warnings.length}`);
+    
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+      baseProtocol,
+      baseUrlField
+    };
+    
+  } catch (error) {
+    console.error(`❌ Protocol validation error for ${toolType}:`, error);
+    return {
+      valid: false,
+      errors: [`Protocol validation failed: ${error.message}`],
+      warnings
+    };
+  }
+}
+
 // Register plugins
 async function registerPlugins() {
   // CORS - Support external deployment  
@@ -278,6 +402,24 @@ fastify.put('/api/tools/:tool_type/config', {
     );
     
     console.log(`✅ Complete config after merging defaults:`, JSON.stringify(completeConfigData, null, 2));
+    
+    // CRITICAL FIX: Protocol consistency validation before saving
+    const protocolValidation = validateProtocolConsistency(completeConfigData, tool_type);
+    if (!protocolValidation.valid) {
+      fastify.log.error(`❌ Protocol validation failed for ${tool_type}:`, protocolValidation.errors);
+      reply.status(400);
+      return {
+        success: false,
+        error: 'Protocol consistency validation failed',
+        validation_errors: protocolValidation.errors,
+        validation_warnings: protocolValidation.warnings,
+        suggestion: 'Ensure all URLs use the same protocol (HTTP or HTTPS). For example, if your Grafana URL is HTTPS, all redirect URIs and web origins should also use HTTPS.'
+      };
+    }
+    
+    if (protocolValidation.warnings.length > 0) {
+      fastify.log.warn(`⚠️ Protocol validation warnings for ${tool_type}:`, protocolValidation.warnings);
+    }
     
     // Validate the complete configuration against tool schema
     const schema = toolSchemas.getSchema(tool_type);

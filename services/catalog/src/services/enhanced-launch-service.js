@@ -347,6 +347,28 @@ class EnhancedLaunchService {
     return finalUrl;
   }
 
+  // Helper function to ensure protocol consistency in URLs
+  ensureProtocolConsistency(baseUrl, path = '') {
+    if (!baseUrl) return path;
+    
+    try {
+      const baseUrlObj = new URL(baseUrl);
+      const protocol = baseUrlObj.protocol;
+      const hostname = baseUrlObj.hostname;
+      const port = baseUrlObj.port;
+      
+      // Construct the full URL with consistent protocol
+      const portPart = port ? `:${port}` : '';
+      const fullUrl = `${protocol}//${hostname}${portPart}${path}`;
+      
+      this.fastify.log.info(`🔧 Protocol consistency: ${baseUrl} + ${path} = ${fullUrl}`);
+      return fullUrl;
+    } catch (error) {
+      this.fastify.log.warn(`⚠️ URL parsing error for ${baseUrl}: ${error.message}`);
+      return path ? `${baseUrl}${path}` : baseUrl; // Fallback
+    }
+  }
+
   async buildGrafanaLaunchUrl(launchUrl, options) {
     const { context, state_parameter, user, baseUrl, tool } = options;
     
@@ -356,7 +378,10 @@ class EnhancedLaunchService {
     // For direct launch with OIDC, Grafana handles authentication itself
     if (authConfig.direct_launch || authConfig.grafana_url) {
       // Just redirect to Grafana - it will handle OIDC flow internally
-      let targetUrl = authConfig.grafana_url || 'http://localhost:3100';
+      let targetUrl = authConfig.grafana_url || baseUrl || 'http://localhost:3100';
+      
+      // Ensure we're using the configured URL which should preserve the protocol
+      this.fastify.log.info(`📍 Using Grafana base URL: ${targetUrl}`);
       
       // Add any dashboard or folder navigation
       if (context?.dashboard_uid) {
@@ -367,22 +392,33 @@ class EnhancedLaunchService {
         // Search for dashboard by name
         targetUrl = `${targetUrl}/dashboards?query=${encodeURIComponent(context.dashboard_name)}`;
       } else {
-        // Default to home dashboard
-        targetUrl = `${targetUrl}`;
+        // Default to home dashboard - ensure clean URL
+        // targetUrl remains unchanged for root access
       }
       
       // For OIDC flow, Grafana will handle the authentication redirect
-      this.fastify.log.info(`Launching Grafana with direct URL: ${targetUrl}`);
+      this.fastify.log.info(`🚀 Launching Grafana with direct URL (OIDC): ${targetUrl}`);
+      this.fastify.log.info(`📝 Direct launch - protocol preserved from grafana_url: ${authConfig.grafana_url}`);
       return targetUrl;
     }
     
     // Fallback to building OAuth URL if not using direct launch
     const clientId = authConfig.client_id || process.env.GRAFANA_CLIENT_ID || 'grafana-client';
     const scopes = authConfig.scopes || ['openid', 'email', 'profile'];
-    const redirectUri = authConfig.redirect_uri || 'http://localhost:3100/login/generic_oauth';
     
-    // Build the OAuth authorization URL for Keycloak
-    const authUrl = authConfig.auth_url || 'http://localhost:8080/realms/sso-hub/protocol/openid-connect/auth';
+    // CRITICAL FIX: Ensure redirect URI preserves protocol from Grafana URL
+    let redirectUri = authConfig.redirect_uri;
+    if (!redirectUri) {
+      // Construct redirect URI with protocol consistency
+      const grafanaUrl = authConfig.grafana_url || baseUrl || 'http://localhost:3100';
+      redirectUri = this.ensureProtocolConsistency(grafanaUrl, '/login/generic_oauth');
+    }
+    this.fastify.log.info(`🔐 Using Grafana redirect URI: ${redirectUri}`);
+    
+    // Build the OAuth authorization URL for Keycloak with protocol-aware defaults
+    const keycloakBaseUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080';
+    const keycloakRealm = process.env.KEYCLOAK_REALM || 'sso-hub';
+    const authUrl = authConfig.auth_url || `${keycloakBaseUrl}/realms/${keycloakRealm}/protocol/openid-connect/auth`;
     const scopeString = Array.isArray(scopes) ? scopes.join(' ') : scopes;
     
     const oauthUrl = new URL(authUrl);
@@ -392,7 +428,8 @@ class EnhancedLaunchService {
     oauthUrl.searchParams.set('scope', scopeString);
     oauthUrl.searchParams.set('state', state_parameter);
     
-    this.fastify.log.info(`Building Grafana OAuth URL: ${oauthUrl.toString()}`);
+    this.fastify.log.info(`🚀 Building Grafana OAuth URL with protocol consistency: ${oauthUrl.toString()}`);
+    this.fastify.log.info(`📝 OAuth parameters - client_id: ${clientId}, redirect_uri: ${redirectUri}, state: ${state_parameter}`);
     return oauthUrl.toString();
   }
 

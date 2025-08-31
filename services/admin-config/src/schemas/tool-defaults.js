@@ -118,13 +118,27 @@ const getKeycloakDefaults = (toolType, baseUrl = 'http://localhost:8080') => {
   const defaultPort = toolPorts[toolType] || 8080;
   const defaultBaseUrl = baseUrl || `http://localhost:${defaultPort}`;
   
-  // Tool-specific redirect URIs
+  // Tool-specific redirect URIs with protocol preservation
   const getRedirectUris = (toolType, baseUrl) => {
     const uris = [];
+    
+    // Validate and log protocol information for debugging
+    if (baseUrl) {
+      try {
+        const urlObj = new URL(baseUrl);
+        console.log(`🔐 Tool defaults - ${toolType} base URL protocol: ${urlObj.protocol}`);
+      } catch (error) {
+        console.warn(`⚠️ Invalid base URL for ${toolType}: ${baseUrl}`);
+      }
+    }
     switch (toolType) {
       case 'grafana':
-        uris.push(`${baseUrl}/login/generic_oauth`);
-        uris.push(`${baseUrl}/auth/callback`);
+        // CRITICAL: Preserve protocol from baseUrl for Grafana OIDC
+        const grafanaOAuthUri = `${baseUrl}/login/generic_oauth`;
+        const grafanaCallbackUri = `${baseUrl}/auth/callback`;
+        uris.push(grafanaOAuthUri);
+        uris.push(grafanaCallbackUri);
+        console.log(`✅ Grafana default redirect URIs with protocol: ${grafanaOAuthUri}, ${grafanaCallbackUri}`);
         break;
       case 'jenkins':
         uris.push(`${baseUrl}/securityRealm/finishLogin`);
@@ -143,6 +157,7 @@ const getKeycloakDefaults = (toolType, baseUrl = 'http://localhost:8080') => {
       default:
         uris.push(`${baseUrl}/auth/callback`);
     }
+    console.log(`📝 Final default redirect URIs for ${toolType}:`, uris);
     return uris;
   };
 
@@ -175,10 +190,14 @@ const getKeycloakDefaults = (toolType, baseUrl = 'http://localhost:8080') => {
  */
 const toolDefaults = {
   grafana: {
-    oauth2: (baseUrl = 'http://localhost:3100') => ({
-      grafana_url: baseUrl,
-      oauth: getOAuth2Defaults('grafana', baseUrl),
-      admin_credentials: getAdminCredentialsDefaults('grafana'),
+    oauth2: (baseUrl = 'http://localhost:3100') => {
+      // Enhanced protocol awareness for Grafana configuration
+      console.log(`📊 Building Grafana OAuth2 defaults with base URL: ${baseUrl}`);
+      
+      return ({
+        grafana_url: baseUrl,
+        oauth: getOAuth2Defaults('grafana', baseUrl),
+        admin_credentials: getAdminCredentialsDefaults('grafana'),
       org_management: {
         enabled: true,
         auto_assign_org: true,
