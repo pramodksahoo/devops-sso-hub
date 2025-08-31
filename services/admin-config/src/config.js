@@ -19,6 +19,11 @@ const config = {
   KEYCLOAK_ADMIN_USERNAME: process.env.KEYCLOAK_ADMIN_USERNAME || 'admin',
   KEYCLOAK_ADMIN_PASSWORD: process.env.KEYCLOAK_ADMIN_PASSWORD || 'admin_secure_password_123',
   
+  // External Keycloak Configuration (for auto-populate on external deployments)
+  EXTERNAL_KEYCLOAK_URL: process.env.EXTERNAL_KEYCLOAK_URL || process.env.KEYCLOAK_EXTERNAL_URL || process.env.KEYCLOAK_PUBLIC_URL || null,
+  EXTERNAL_HOST: process.env.EXTERNAL_HOST || null,
+  EXTERNAL_PROTOCOL: process.env.EXTERNAL_PROTOCOL || 'http',
+  
   // Infisical Configuration (for secret management)
   INFISICAL_URL: process.env.INFISICAL_URL || 'http://infisical:8080',
   INFISICAL_TOKEN: process.env.INFISICAL_TOKEN || '',
@@ -86,6 +91,23 @@ const config = {
       auth_path: '/oauth'
     }
   }
+};
+
+// Helper function to get the appropriate Keycloak URL for external access
+// Returns external URL when available, falls back to internal URL
+config.getKeycloakUrl = () => {
+  // For external deployments, use external URL if available
+  if (config.EXTERNAL_KEYCLOAK_URL) {
+    return config.EXTERNAL_KEYCLOAK_URL;
+  }
+  
+  // For external host without explicit Keycloak URL, construct it
+  if (config.EXTERNAL_HOST) {
+    return `${config.EXTERNAL_PROTOCOL}://${config.EXTERNAL_HOST}:8080`;
+  }
+  
+  // Fall back to internal Docker URL for localhost development
+  return config.KEYCLOAK_URL;
 };
 
 module.exports = config;

@@ -975,23 +975,29 @@ fastify.get('/api/keycloak/config/:integration_type', {
     let config = {};
     
     if (integration_type === 'oauth2' || integration_type === 'oidc') {
+      // Use environment-aware Keycloak URL (external for deployments, internal for localhost)
+      const keycloakUrl = require('./config').getKeycloakUrl();
+      
       // Return ONLY the three allowed fields - frontend will merge with existing values
       config = {
         // ONLY these three URLs should be auto-populated
-        'oauth.auth_url': `${require('./config').KEYCLOAK_URL}/realms/${require('./config').KEYCLOAK_REALM}/protocol/openid-connect/auth`,
-        'oauth.token_url': `${require('./config').KEYCLOAK_URL}/realms/${require('./config').KEYCLOAK_REALM}/protocol/openid-connect/token`,
-        'oauth.api_url': `${require('./config').KEYCLOAK_URL}/realms/${require('./config').KEYCLOAK_REALM}/protocol/openid-connect/userinfo`
+        'oauth.auth_url': `${keycloakUrl}/realms/${require('./config').KEYCLOAK_REALM}/protocol/openid-connect/auth`,
+        'oauth.token_url': `${keycloakUrl}/realms/${require('./config').KEYCLOAK_REALM}/protocol/openid-connect/token`,
+        'oauth.api_url': `${keycloakUrl}/realms/${require('./config').KEYCLOAK_REALM}/protocol/openid-connect/userinfo`
       };
       
       // NO tool-specific field population - preserve existing sync field values
       
     } else if (integration_type === 'saml') {
+      // Use environment-aware Keycloak URL (external for deployments, internal for localhost)
+      const keycloakUrl = require('./config').getKeycloakUrl();
+      
       // SAML configuration - only populate SAML URLs, preserve all other fields
       config = {
         // ONLY these three SAML URLs should be auto-populated
-        'saml.idp_sso_url': `${require('./config').KEYCLOAK_URL}/realms/${require('./config').KEYCLOAK_REALM}/protocol/saml`,
-        'saml.idp_slo_url': `${require('./config').KEYCLOAK_URL}/realms/${require('./config').KEYCLOAK_REALM}/protocol/saml`,
-        'saml.idp_metadata_url': `${require('./config').KEYCLOAK_URL}/realms/${require('./config').KEYCLOAK_REALM}/protocol/saml/descriptor`
+        'saml.idp_sso_url': `${keycloakUrl}/realms/${require('./config').KEYCLOAK_REALM}/protocol/saml`,
+        'saml.idp_slo_url': `${keycloakUrl}/realms/${require('./config').KEYCLOAK_REALM}/protocol/saml`,
+        'saml.idp_metadata_url': `${keycloakUrl}/realms/${require('./config').KEYCLOAK_REALM}/protocol/saml/descriptor`
       };
     }
     
