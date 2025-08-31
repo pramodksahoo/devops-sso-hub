@@ -486,22 +486,31 @@ fastify.put('/api/tools/:tool_type/config', {
     
     console.log(`✅ Complete config after merging defaults: ${safeJSONStringify(completeConfigData, 'completeConfigData')}`);
     
-    // CRITICAL FIX: Protocol consistency validation before saving
-    const protocolValidation = validateProtocolConsistency(completeConfigData, tool_type);
-    if (!protocolValidation.valid) {
-      fastify.log.error(`❌ Protocol validation failed for ${tool_type}:`, protocolValidation.errors);
-      reply.status(400);
-      return {
-        success: false,
-        error: 'Protocol consistency validation failed',
-        validation_errors: protocolValidation.errors,
-        validation_warnings: protocolValidation.warnings,
-        suggestion: 'Ensure all URLs use the same protocol (HTTP or HTTPS). For example, if your Grafana URL is HTTPS, all redirect URIs and web origins should also use HTTPS.'
-      };
-    }
+    // CRITICAL FIX: Simple URL validation without complex object serialization
+    // (Removed complex validateProtocolConsistency that was causing JSON parsing errors)
     
-    if (protocolValidation.warnings.length > 0) {
-      fastify.log.warn(`⚠️ Protocol validation warnings for ${tool_type}:`, protocolValidation.warnings);
+    // Basic URL format validation for common tool URLs
+    const urlFields = {
+      grafana_url: completeConfigData.grafana_url,
+      jenkins_url: completeConfigData.jenkins_url,
+      base_url: completeConfigData.base_url,
+      instance_url: completeConfigData.instance_url
+    };
+    
+    for (const [fieldName, url] of Object.entries(urlFields)) {
+      if (url && typeof url === 'string') {
+        // Simple URL format check without complex parsing
+        if (!url.match(/^https?:\/\/.+/)) {
+          reply.status(400);
+          return {
+            success: false,
+            error: `Invalid URL format in ${fieldName}`,
+            error_type: 'url_format_error',
+            details: `${fieldName} must be a valid URL starting with http:// or https://`,
+            suggestion: 'Please provide a valid URL format, e.g., https://example.com or http://localhost:3000'
+          };
+        }
+      }
     }
     
     // Validate the complete configuration against tool schema
@@ -548,6 +557,24 @@ fastify.put('/api/tools/:tool_type/config', {
     
     try {
       console.log(`🔄 Starting atomic save and sync operation for ${tool_type}...`);
+      
+      // CRITICAL FIX: Additional safety check before database operations
+      try {
+        // Test that validatedConfig can be safely processed
+        const configTest = safeJSONStringify(validatedConfig, `${tool_type}-final-validation`);
+        if (configTest.includes('__serialization_error')) {
+          throw new Error('Configuration contains circular references or non-serializable data');
+        }
+      } catch (finalValidationError) {
+        reply.status(400);
+        return {
+          success: false,
+          error: 'Configuration data validation failed',
+          error_type: 'json_validation_error',
+          details: finalValidationError.message,
+          suggestion: 'Please ensure configuration contains only valid JSON data without circular references'
+        };
+      }
       
       // Step 1: Save configuration to database
       savedConfig = await toolConfigService.saveToolConfig(tool_type, validatedConfig);

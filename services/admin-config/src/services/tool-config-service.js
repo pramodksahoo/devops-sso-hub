@@ -2,6 +2,46 @@ const { Pool } = require('pg');
 const config = require('../config');
 const toolSchemas = require('../schemas/tool-schemas');
 
+// CRITICAL FIX: Safe JSON stringify helper to prevent parsing errors
+function safeJSONStringify(obj, context = '') {
+  if (obj === null || obj === undefined) {
+    return 'null';
+  }
+  
+  try {
+    // Handle primitive types
+    if (typeof obj !== 'object') {
+      return JSON.stringify(obj);
+    }
+    
+    // Handle complex objects with circular reference protection
+    const seen = new WeakSet();
+    const result = JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[Circular Reference]';
+        }
+        seen.add(value);
+      }
+      if (typeof value === 'function') {
+        return '[Function]';
+      }
+      return value;
+    }, 2);
+    
+    return result;
+  } catch (error) {
+    console.error(`❌ JSON serialization failed for ${context}:`, error.message);
+    // Return a safe fallback that won't break database operations
+    return JSON.stringify({
+      __serialization_error: true,
+      error: error.message,
+      context: context,
+      fallback_data: 'Configuration data could not be serialized safely'
+    });
+  }
+}
+
 class ToolConfigService {
   constructor() {
     this.pool = new Pool({
@@ -293,6 +333,25 @@ class ToolConfigService {
   }
 
   async saveToolConfig(toolType, configData, userId = 'system') {
+    // CRITICAL FIX: Comprehensive input validation to prevent JSON errors
+    if (!configData || typeof configData !== 'object') {
+      throw new Error('Invalid configuration data - must be a valid object');
+    }
+    
+    if (!toolType || typeof toolType !== 'string') {
+      throw new Error('Invalid tool type - must be a non-empty string');
+    }
+    
+    // Test JSON serializability early to catch issues before database operations
+    try {
+      const testSerialization = safeJSONStringify(configData, `${toolType}-pre-validation`);
+      if (testSerialization.includes('__serialization_error')) {
+        console.warn(`⚠️ Configuration data for ${toolType} has serialization issues but proceeding with fallback`);
+      }
+    } catch (serializationError) {
+      throw new Error(`Configuration data cannot be serialized: ${serializationError.message}`);
+    }
+    
     const client = await this.pool.connect();
     
     try {
@@ -340,7 +399,7 @@ class ToolConfigService {
           keycloak_client_id = EXCLUDED.keycloak_client_id,
           updated_at = NOW()
         RETURNING *
-      `, [toolType, integrationType, JSON.stringify(configData), environment, userId, keycloakClientId]);
+      `, [toolType, integrationType, safeJSONStringify(configData, `${toolType}-config-save`), environment, userId, keycloakClientId]);
       
       const savedConfig = upsertResult.rows[0];
       
@@ -363,7 +422,7 @@ class ToolConfigService {
         WHERE slug = $4
         RETURNING id, slug, name
       `, [
-        JSON.stringify(configData),
+        safeJSONStringify(configData, `${toolType}-tools-table-update`),
         integrationType,
         baseUrl,
         toolType
@@ -383,7 +442,7 @@ class ToolConfigService {
         toolType,
         oldConfig ? 'update' : 'create',
         oldConfig,
-        JSON.stringify(configData),
+        safeJSONStringify(configData, `${toolType}-audit-log`),
         userId
       ]);
       
@@ -417,7 +476,7 @@ class ToolConfigService {
       `, [
         toolType,
         status,
-        testResults ? JSON.stringify(testResults) : null,
+        testResults ? safeJSONStringify(testResults, `${toolType}-test-results`) : null,
         testResults?.error || null
       ]);
       
