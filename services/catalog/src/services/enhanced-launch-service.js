@@ -449,7 +449,7 @@ class EnhancedLaunchService {
     // For direct launch with OIDC, Grafana handles authentication itself
     if (authConfig.direct_launch || authConfig.grafana_url) {
       // CRITICAL FIX: Use pure tool URL resolution independent of environment overrides
-      let targetUrl = this.getPureToolUrl(tool) || 'http://localhost:3100';
+      let targetUrl = this.getPureToolUrl(tool) || this.config.generateProtocolAwareUrl(tool?.auth_config || {}, 'localhost', '3100');
       
       // Ensure we're using the configured URL which should preserve the protocol
       this.fastify.log.info(`📍 Using pure Grafana URL for direct launch: ${targetUrl}`);
@@ -483,7 +483,7 @@ class EnhancedLaunchService {
     let redirectUri = authConfig.redirect_uri;
     if (!redirectUri) {
       // CRITICAL FIX: Use pure tool URL resolution to avoid environment variable override
-      const grafanaUrl = this.getPureToolUrl(tool) || 'http://localhost:3100';
+      const grafanaUrl = this.getPureToolUrl(tool) || this.config.generateProtocolAwareUrl(tool?.auth_config || {}, 'localhost', '3100');
       
       this.fastify.log.info(`🔍 Constructing redirect URI from PURE grafana URL: ${grafanaUrl}`);
       this.fastify.log.info(`🔍 Auth config for protocol consistency: ${JSON.stringify(authConfig)}`);
