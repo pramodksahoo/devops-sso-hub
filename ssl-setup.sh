@@ -333,13 +333,53 @@ setup_auto_renewal() {
     local renewal_script="$SCRIPT_DIR/renew-ssl-certs.sh"
     local cron_entry="0 3 * * 1 $renewal_script >> $SCRIPT_DIR/ssl-renewal.log 2>&1"
     
-    # Check if cron entry already exists
-    if crontab -l 2>/dev/null | grep -q "$renewal_script"; then
-        print_info "Automatic renewal is already configured"
+    # Check if cron service is available
+    if command -v crontab >/dev/null 2>&1; then
+        # Check if cron entry already exists
+        if crontab -l 2>/dev/null | grep -q "$renewal_script"; then
+            print_info "Automatic renewal is already configured"
+        else
+            # Add cron entry
+            (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
+            print_success "Automatic renewal configured (runs every Monday at 3 AM)"
+        fi
     else
-        # Add cron entry
-        (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
-        print_success "Automatic renewal configured (runs every Monday at 3 AM)"
+        print_warning "crontab command not found, installing cron service..."
+        
+        # Install cron service based on the system
+        if command -v yum >/dev/null 2>&1; then
+            # Amazon Linux / RHEL / CentOS
+            print_info "Installing cronie package..."
+            sudo yum install -y cronie
+            sudo systemctl enable crond
+            sudo systemctl start crond
+        elif command -v apt-get >/dev/null 2>&1; then
+            # Ubuntu / Debian
+            print_info "Installing cron package..."
+            sudo apt-get update
+            sudo apt-get install -y cron
+            sudo systemctl enable cron
+            sudo systemctl start cron
+        else
+            print_error "Unable to install cron service automatically. Please install manually:"
+            print_info "For Amazon Linux: sudo yum install -y cronie && sudo systemctl enable crond && sudo systemctl start crond"
+            print_info "For Ubuntu/Debian: sudo apt-get install -y cron && sudo systemctl enable cron && sudo systemctl start cron"
+            print_warning "Skipping automatic renewal setup. You can run the renewal script manually: $renewal_script"
+            return
+        fi
+        
+        # Retry setting up cron after installation
+        if command -v crontab >/dev/null 2>&1; then
+            print_info "Cron service installed successfully, setting up automatic renewal..."
+            if crontab -l 2>/dev/null | grep -q "$renewal_script"; then
+                print_info "Automatic renewal is already configured"
+            else
+                (crontab -l 2>/dev/null; echo "$cron_entry") | crontab -
+                print_success "Automatic renewal configured (runs every Monday at 3 AM)"
+            fi
+        else
+            print_error "Failed to install cron service. Please install manually and run: $renewal_script"
+        fi
     fi
     
     print_info "To manually renew certificates, run: $renewal_script"
@@ -469,6 +509,28 @@ main() {
             print_info "1. Restart all services: docker-compose down && docker-compose up -d"
             print_info "2. Access via HTTPS: https://$EXTERNAL_HOST"
             print_info "3. Certificate will auto-renew before expiration"
+            echo ""
+            
+            # Validate certificate installation
+            if [ -f "/home/ec2-user/devops-sso-hub/infra/letsencrypt/live/$EXTERNAL_HOST/fullchain.pem" ] && \
+               [ -f "/home/ec2-user/devops-sso-hub/infra/letsencrypt/live/$EXTERNAL_HOST/privkey.pem" ]; then
+                print_success "✅ SSL certificates are properly installed"
+                
+                # Check certificate expiration
+                cert_expiry=$(openssl x509 -in "/home/ec2-user/devops-sso-hub/infra/letsencrypt/live/$EXTERNAL_HOST/fullchain.pem" -noout -dates | grep "notAfter" | cut -d= -f2)
+                print_info "📅 Certificate expires: $cert_expiry"
+                
+                # Check if renewal script is executable
+                if [ -x "$SCRIPT_DIR/renew-ssl-certs.sh" ]; then
+                    print_success "✅ Renewal script is ready"
+                else
+                    print_warning "⚠️  Making renewal script executable..."
+                    chmod +x "$SCRIPT_DIR/renew-ssl-certs.sh"
+                fi
+            else
+                print_error "❌ SSL certificates not found in expected location"
+                exit 1
+            fi
             
         else
             print_error "Failed to copy certificates"
