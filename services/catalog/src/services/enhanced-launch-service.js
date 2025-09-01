@@ -366,38 +366,72 @@ class EnhancedLaunchService {
       const hostname = baseUrlObj.hostname;
       const port = baseUrlObj.port;
       
-      // PROTOCOL PRECEDENCE: Tool-specific protocol > Base URL protocol > Global protocol
-      if (toolConfig) {
+      this.fastify.log.info(`🔍 Starting protocol consistency check: ${safeBaseUrl} + ${safePath}`);
+      this.fastify.log.info(`🔍 Extracted from baseUrl - protocol: ${protocol}, hostname: ${hostname}, port: ${port}`);
+      
+      // ENHANCED PROTOCOL PRECEDENCE: Direct tool URL protocol > Tool config protocol > Base URL protocol > Global protocol
+      let finalProtocol = protocol; // Default to baseUrl protocol
+      
+      // First priority: Use the protocol directly from the baseUrl (this should be the tool's configured URL)
+      if (protocol === 'https:') {
+        this.fastify.log.info(`✅ Using HTTPS protocol from baseUrl: ${safeBaseUrl}`);
+        finalProtocol = protocol;
+      } else if (protocol === 'http:') {
+        this.fastify.log.info(`ℹ️ Using HTTP protocol from baseUrl: ${safeBaseUrl}`);
+        finalProtocol = protocol;
+      }
+      
+      // Second priority: Check tool config for additional protocol hints
+      if (toolConfig && typeof toolConfig === 'object') {
         const config = require('../config');
-        if (config.hasToolSpecificProtocol(toolConfig)) {
+        
+        // Log tool config for debugging
+        this.fastify.log.info(`🔍 Tool config provided: ${JSON.stringify(toolConfig, null, 2)}`);
+        
+        // Check if tool config has specific protocol configuration
+        if (config.hasToolSpecificProtocol && config.hasToolSpecificProtocol(toolConfig)) {
           const toolProtocol = config.extractToolProtocol(toolConfig);
-          this.fastify.log.info(`🔧 Using tool-specific protocol: ${toolProtocol} (was ${protocol})`);
-          protocol = toolProtocol;
+          this.fastify.log.info(`🔧 Tool config suggests protocol: ${toolProtocol} (baseUrl had: ${protocol})`);
+          
+          // Only override if tool config suggests HTTPS and we currently have HTTP
+          if (toolProtocol === 'https:' && protocol === 'http:') {
+            this.fastify.log.info(`⬆️ Upgrading protocol from HTTP to HTTPS based on tool config`);
+            finalProtocol = toolProtocol;
+          }
         }
       }
       
-      // Construct the full URL with protocol-aware consistency
+      // Construct the full URL with the determined protocol
       const portPart = port ? `:${port}` : '';
-      const fullUrl = `${protocol}//${hostname}${portPart}${safePath}`;
+      const fullUrl = `${finalProtocol}//${hostname}${portPart}${safePath}`;
       
-      this.fastify.log.info(`🔧 Protocol consistency: ${safeBaseUrl} + ${safePath} = ${fullUrl} (tool-aware)`);
+      this.fastify.log.info(`🔧 Protocol consistency result: ${safeBaseUrl} + ${safePath} = ${fullUrl}`);
+      this.fastify.log.info(`🔧 Final protocol decision: ${finalProtocol} (original: ${protocol})`);
       
       // Validate the generated URL before returning
       try {
         new URL(fullUrl); // Validation check
+        this.fastify.log.info(`✅ Generated URL validation passed: ${fullUrl}`);
         return fullUrl;
       } catch (validationError) {
-        this.fastify.log.warn(`Generated URL validation failed: ${fullUrl}`);
-        return safePath ? `${safeBaseUrl}${safePath}` : safeBaseUrl;
+        this.fastify.log.warn(`❌ Generated URL validation failed: ${fullUrl}, error: ${validationError.message}`);
+        // Fallback to original baseUrl + path if validation fails
+        const fallbackUrl = safePath ? `${safeBaseUrl}${safePath}` : safeBaseUrl;
+        this.fastify.log.info(`🔄 Using fallback URL: ${fallbackUrl}`);
+        return fallbackUrl;
       }
       
     } catch (error) {
       // Enhanced error handling that won't interfere with JSON operations
       this.fastify.log.error(`URL processing error for ${baseUrl}: ${error.message}`);
+      this.fastify.log.error(`Error stack: ${error.stack}`);
+      
       // Safe fallback that preserves functionality
       const safeBaseUrl = String(baseUrl);
       const safePath = String(path);
-      return safePath ? `${safeBaseUrl}${safePath}` : safeBaseUrl;
+      const fallbackUrl = safePath ? `${safeBaseUrl}${safePath}` : safeBaseUrl;
+      this.fastify.log.info(`🔄 Error recovery fallback URL: ${fallbackUrl}`);
+      return fallbackUrl;
     }
   }
 
@@ -407,13 +441,18 @@ class EnhancedLaunchService {
     // Get Grafana configuration from the tool's auth_config
     const authConfig = tool?.auth_config || {};
     
+    this.fastify.log.info(`🏗️ Building Grafana launch URL with tool config:`);
+    this.fastify.log.info(`📋 Tool auth_config: ${JSON.stringify(authConfig, null, 2)}`);
+    this.fastify.log.info(`📋 Base URL: ${baseUrl}`);
+    this.fastify.log.info(`📋 Tool object: ${JSON.stringify(tool, null, 2)}`);
+    
     // For direct launch with OIDC, Grafana handles authentication itself
     if (authConfig.direct_launch || authConfig.grafana_url) {
       // Just redirect to Grafana - it will handle OIDC flow internally
       let targetUrl = authConfig.grafana_url || baseUrl || 'http://localhost:3100';
       
       // Ensure we're using the configured URL which should preserve the protocol
-      this.fastify.log.info(`📍 Using Grafana base URL: ${targetUrl}`);
+      this.fastify.log.info(`📍 Using Grafana base URL for direct launch: ${targetUrl}`);
       
       // Add any dashboard or folder navigation
       if (context?.dashboard_uid) {
@@ -438,20 +477,29 @@ class EnhancedLaunchService {
     const clientId = authConfig.client_id || process.env.GRAFANA_CLIENT_ID || 'grafana-client';
     const scopes = authConfig.scopes || ['openid', 'email', 'profile'];
     
+    this.fastify.log.info(`🔧 Building OAuth flow for Grafana - client_id: ${clientId}, scopes: ${scopes.join(' ')}`);
+    
     // CRITICAL FIX: Ensure redirect URI preserves protocol from Grafana URL
     let redirectUri = authConfig.redirect_uri;
     if (!redirectUri) {
       // Construct redirect URI with protocol consistency
       const grafanaUrl = authConfig.grafana_url || baseUrl || 'http://localhost:3100';
+      
+      this.fastify.log.info(`🔍 Constructing redirect URI from grafana URL: ${grafanaUrl}`);
+      this.fastify.log.info(`🔍 Auth config for protocol consistency: ${JSON.stringify(authConfig)}`);
+      
       redirectUri = this.ensureProtocolConsistency(grafanaUrl, '/login/generic_oauth', authConfig);
     }
-    this.fastify.log.info(`🔐 Using Grafana redirect URI: ${redirectUri}`);
+    
+    this.fastify.log.info(`🔐 Final Grafana redirect URI: ${redirectUri}`);
     
     // Build the OAuth authorization URL for Keycloak with protocol-aware defaults
     const keycloakBaseUrl = process.env.KEYCLOAK_URL || 'http://localhost:8080';
     const keycloakRealm = process.env.KEYCLOAK_REALM || 'sso-hub';
     const authUrl = authConfig.auth_url || `${keycloakBaseUrl}/realms/${keycloakRealm}/protocol/openid-connect/auth`;
     const scopeString = Array.isArray(scopes) ? scopes.join(' ') : scopes;
+    
+    this.fastify.log.info(`🔐 Building OAuth URL - Keycloak: ${authUrl}`);
     
     const oauthUrl = new URL(authUrl);
     oauthUrl.searchParams.set('client_id', clientId);
@@ -460,9 +508,31 @@ class EnhancedLaunchService {
     oauthUrl.searchParams.set('scope', scopeString);
     oauthUrl.searchParams.set('state', state_parameter);
     
-    this.fastify.log.info(`🚀 Building Grafana OAuth URL with protocol consistency: ${oauthUrl.toString()}`);
-    this.fastify.log.info(`📝 OAuth parameters - client_id: ${clientId}, redirect_uri: ${redirectUri}, state: ${state_parameter}`);
-    return oauthUrl.toString();
+    const finalOAuthUrl = oauthUrl.toString();
+    
+    this.fastify.log.info(`🚀 Final Grafana OAuth URL: ${finalOAuthUrl}`);
+    this.fastify.log.info(`📝 OAuth parameters summary:`);
+    this.fastify.log.info(`   - client_id: ${clientId}`);
+    this.fastify.log.info(`   - redirect_uri: ${redirectUri}`);
+    this.fastify.log.info(`   - response_type: code`);
+    this.fastify.log.info(`   - scope: ${scopeString}`);
+    this.fastify.log.info(`   - state: ${state_parameter}`);
+    
+    // Extract and log the protocol from the redirect URI to verify fix
+    try {
+      const redirectUrl = new URL(redirectUri);
+      this.fastify.log.info(`✅ Redirect URI protocol verification: ${redirectUrl.protocol}`);
+      
+      if (redirectUrl.protocol === 'https:') {
+        this.fastify.log.info(`✅ SUCCESS: Redirect URI uses HTTPS protocol - fix is working!`);
+      } else if (redirectUrl.protocol === 'http:') {
+        this.fastify.log.info(`ℹ️ Redirect URI uses HTTP protocol (this may be correct for local development)`);
+      }
+    } catch (urlError) {
+      this.fastify.log.warn(`⚠️ Could not parse redirect URI for protocol verification: ${urlError.message}`);
+    }
+    
+    return finalOAuthUrl;
   }
 
   async buildPrometheusLaunchUrl(launchUrl, options) {

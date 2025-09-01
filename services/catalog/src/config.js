@@ -85,21 +85,40 @@ module.exports = {
    */
   extractToolProtocol: (toolConfig) => {
     if (!toolConfig || typeof toolConfig !== 'object') {
+      console.warn('extractToolProtocol: Invalid or missing toolConfig, defaulting to http:');
       return 'http:';
     }
 
-    // Check tool-specific URL fields for protocol
+    console.log('🔍 extractToolProtocol: Analyzing tool config:', JSON.stringify(toolConfig, null, 2));
+
+    // Check tool-specific URL fields for protocol in priority order
     const urlFields = [
-      'grafana_url', 'base_url', 'instance_url', 'jenkins_url', 
-      'argocd_url', 'sonarqube_url', 'kibana_url'
+      'grafana_url',      // Highest priority for Grafana tools
+      'base_url', 
+      'instance_url', 
+      'jenkins_url', 
+      'argocd_url', 
+      'sonarqube_url', 
+      'kibana_url',
+      'prometheus_url',
+      'terraform_url',
+      'github_url',
+      'gitlab_url'
     ];
 
     for (const field of urlFields) {
-      if (toolConfig[field]) {
+      if (toolConfig[field] && typeof toolConfig[field] === 'string') {
         try {
-          const url = new URL(toolConfig[field]);
-          return url.protocol; // Returns 'http:' or 'https:'
+          const urlString = String(toolConfig[field]).trim();
+          console.log(`🔍 extractToolProtocol: Checking field ${field} = ${urlString}`);
+          
+          const url = new URL(urlString);
+          const protocol = url.protocol;
+          
+          console.log(`✅ extractToolProtocol: Found protocol ${protocol} from field ${field}`);
+          return protocol; // Returns 'http:' or 'https:'
         } catch (error) {
+          console.warn(`⚠️ extractToolProtocol: Invalid URL in field ${field}: ${toolConfig[field]}, error: ${error.message}`);
           // Invalid URL, continue to next field
           continue;
         }
@@ -107,7 +126,9 @@ module.exports = {
     }
 
     // Fallback to infrastructure protocol if no tool-specific URL found
-    return process.env.INFRASTRUCTURE_PROTOCOL ? `${process.env.INFRASTRUCTURE_PROTOCOL}:` : 'http:';
+    const fallbackProtocol = process.env.INFRASTRUCTURE_PROTOCOL ? `${process.env.INFRASTRUCTURE_PROTOCOL}:` : 'http:';
+    console.log(`🔄 extractToolProtocol: No valid URLs found in tool config, using fallback: ${fallbackProtocol}`);
+    return fallbackProtocol;
   },
 
   /**
@@ -131,14 +152,39 @@ module.exports = {
    */
   hasToolSpecificProtocol: (toolConfig) => {
     if (!toolConfig || typeof toolConfig !== 'object') {
+      console.warn('hasToolSpecificProtocol: Invalid or missing toolConfig');
       return false;
     }
 
+    console.log('🔍 hasToolSpecificProtocol: Checking tool config:', JSON.stringify(toolConfig, null, 2));
+
     const urlFields = [
-      'grafana_url', 'base_url', 'instance_url', 'jenkins_url',
-      'argocd_url', 'sonarqube_url', 'kibana_url'
+      'grafana_url',      // Highest priority for Grafana tools
+      'base_url', 
+      'instance_url', 
+      'jenkins_url',
+      'argocd_url', 
+      'sonarqube_url', 
+      'kibana_url',
+      'prometheus_url',
+      'terraform_url',
+      'github_url',
+      'gitlab_url'
     ];
 
-    return urlFields.some(field => toolConfig[field] && toolConfig[field].includes('://'));
+    const hasSpecificProtocol = urlFields.some(field => {
+      const hasProtocol = toolConfig[field] && 
+                         typeof toolConfig[field] === 'string' && 
+                         toolConfig[field].includes('://');
+      
+      if (hasProtocol) {
+        console.log(`✅ hasToolSpecificProtocol: Found protocol in field ${field}: ${toolConfig[field]}`);
+      }
+      
+      return hasProtocol;
+    });
+
+    console.log(`🔍 hasToolSpecificProtocol: Result = ${hasSpecificProtocol}`);
+    return hasSpecificProtocol;
   }
 };
