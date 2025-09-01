@@ -7,20 +7,24 @@
 const fastify = require('fastify');
 const { Issuer, generators } = require('openid-client');
 
-// Dynamic configuration builder - supports external deployments
+// Dynamic configuration builder - supports mixed protocol deployments
 function buildDynamicConfig() {
   const externalHost = process.env.EXTERNAL_HOST || 'localhost';
   const externalProtocol = process.env.EXTERNAL_PROTOCOL || 'http';
   const externalPort = process.env.EXTERNAL_PORT || '';
   
+  // PROTOCOL INDEPENDENCE: Support mixed protocols for SSO-Hub + Tools
+  const toolSpecificProtocols = process.env.TOOL_SPECIFIC_PROTOCOLS === 'true';
+  
   // Check if this is an external deployment (not localhost)
   const isExternalDeployment = externalHost !== 'localhost';
   
-  console.log('🔧 Building dynamic configuration:', {
+  console.log('🔧 Building mixed protocol configuration:', {
     external_host: externalHost,
     external_protocol: externalProtocol, 
     external_port: externalPort,
-    is_external: isExternalDeployment
+    is_external: isExternalDeployment,
+    tool_specific_protocols: toolSpecificProtocols
   });
   
   // Build URLs dynamically based on external configuration
@@ -84,10 +88,122 @@ function buildDynamicConfig() {
     // Session Configuration
     SESSION_MAX_AGE: 24 * 60 * 60 * 1000, // 24 hours
     
+    // Mixed Protocol Support
+    TOOL_SPECIFIC_PROTOCOLS: toolSpecificProtocols,
+    
     // Helper flags
     IS_EXTERNAL_DEPLOYMENT: isExternalDeployment,
     IS_HTTPS: externalProtocol === 'https'
   };
+}
+
+/**
+ * CRITICAL FIX: Generate tool-specific redirect URIs with correct protocols
+ * This function bypasses the Auth-BFF protocol contamination by respecting tool database configurations
+ * @param {string} toolId - Tool identifier
+ * @param {Object} toolConfig - Tool configuration from database (optional)
+ * @returns {Promise<string>} Properly protocoled redirect URI
+ */
+async function generateToolRedirectUri(toolId, toolConfig = null) {
+  console.log('🔧 generateToolRedirectUri: Starting for tool:', toolId);
+  
+  try {
+    // If tool config not provided, fetch from catalog service
+    if (!toolConfig) {
+      console.log('🔍 Fetching tool configuration from catalog service...');
+      const catalogResponse = await fetch(`http://catalog:3006/api/tools/${toolId}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      
+      if (catalogResponse.ok) {
+        const toolData = await catalogResponse.json();
+        toolConfig = toolData.tool?.auth_config || toolData.auth_config || {};
+        console.log('✅ Retrieved tool config from catalog:', Object.keys(toolConfig));
+      } else {
+        console.warn('⚠️ Failed to fetch tool config, using fallback approach');
+        toolConfig = {};
+      }
+    }
+    
+    // Determine tool's preferred protocol from its configuration
+    let toolProtocol = null;
+    let toolHost = null;
+    let toolPort = null;
+    
+    // Check for tool-specific URL fields in priority order
+    const urlFields = [
+      'grafana_url',      // Highest priority for Grafana
+      'base_url', 
+      'instance_url', 
+      'jenkins_url', 
+      'argocd_url', 
+      'sonarqube_url'
+    ];
+    
+    for (const field of urlFields) {
+      if (toolConfig[field] && typeof toolConfig[field] === 'string') {
+        try {
+          const toolUrl = new URL(toolConfig[field]);
+          toolProtocol = toolUrl.protocol;
+          toolHost = toolUrl.hostname;
+          toolPort = toolUrl.port;
+          
+          console.log(`✅ Found tool URL in ${field}: ${toolConfig[field]}`);
+          console.log(`✅ Extracted: protocol=${toolProtocol}, host=${toolHost}, port=${toolPort}`);
+          break;
+        } catch (error) {
+          console.warn(`⚠️ Invalid URL in ${field}: ${toolConfig[field]}`);
+          continue;
+        }
+      }
+    }
+    
+    // If no tool-specific URL found, check environment variables for tool-specific overrides
+    if (!toolProtocol && config.TOOL_SPECIFIC_PROTOCOLS) {
+      const envVarMap = {
+        grafana: 'GRAFANA_BASE_URL',
+        jenkins: 'JENKINS_BASE_URL', 
+        argocd: 'ARGOCD_BASE_URL',
+        sonarqube: 'SONARQUBE_BASE_URL'
+      };
+      
+      const envVar = envVarMap[toolId];
+      if (envVar && process.env[envVar]) {
+        try {
+          const envUrl = new URL(process.env[envVar]);
+          toolProtocol = envUrl.protocol;
+          toolHost = envUrl.hostname;
+          toolPort = envUrl.port;
+          
+          console.log(`✅ Found tool URL in environment ${envVar}: ${process.env[envVar]}`);
+          console.log(`✅ Extracted: protocol=${toolProtocol}, host=${toolHost}, port=${toolPort}`);
+        } catch (error) {
+          console.warn(`⚠️ Invalid environment URL in ${envVar}`);
+        }
+      }
+    }
+    
+    // Build the redirect URI with tool's protocol or fallback to SSO-Hub protocol
+    let redirectUri;
+    
+    if (toolProtocol && toolHost) {
+      // Use tool's specific protocol and host
+      const portPart = toolPort ? `:${toolPort}` : '';
+      redirectUri = `${toolProtocol}//${toolHost}${portPart}/login/generic_oauth`;
+      console.log(`✅ Generated tool-specific redirect URI: ${redirectUri}`);
+    } else {
+      // Fallback to SSO-Hub infrastructure protocol (but warn about it)
+      redirectUri = `${config.AUTH_BFF_URL}/auth/callback`;
+      console.log(`⚠️ No tool-specific URL found, using SSO-Hub callback: ${redirectUri}`);
+    }
+    
+    return redirectUri;
+    
+  } catch (error) {
+    console.error('❌ generateToolRedirectUri error:', error.message);
+    // Safe fallback to original behavior
+    return `${config.AUTH_BFF_URL}/auth/callback`;
+  }
 }
 
 // Initialize configuration
@@ -731,64 +847,58 @@ async function registerProxyRoutes(server) {
     try {
       const baseUrl = process.env.KEYCLOAK_PUBLIC_URL || 'http://localhost:8080/realms/sso-hub';
       
-      // Protocol-specific client mapping with tool context
-      const getClientCredentials = (tool, integrationType) => {
+      // FIXED: Protocol-aware client mapping with tool database configuration priority
+      const getClientCredentials = async (tool, integrationType) => {
         console.log(`📝 Getting client credentials for tool: ${tool}, type: ${integrationType}`);
         
         // Generate protocol-specific client ID
         const clientId = `${tool}-client-${integrationType}`;
         const clientSecret = `${tool}-client-secret`;
         
-        // Tool-specific redirect URIs from environment variables
-        const getToolRedirectUri = (toolName, integrationType) => {
-          // Map tool names to environment variable names
-          const envVarMapping = {
-            grafana: 'GRAFANA_REDIRECT_URI',
-            jenkins: 'JENKINS_REDIRECT_URI', 
-            gitlab: 'GITLAB_REDIRECT_URI',
-            github: 'GITHUB_REDIRECT_URI',
-            sonarqube: 'SONARQUBE_REDIRECT_URI',
-            argocd: 'ARGOCD_REDIRECT_URI',
-            terraform: 'TERRAFORM_REDIRECT_URI',
-            prometheus: 'PROMETHEUS_REDIRECT_URI',
-            kibana: 'KIBANA_REDIRECT_URI',
-            snyk: 'SNYK_REDIRECT_URI',
-            jira: 'JIRA_REDIRECT_URI',
-            servicenow: 'SERVICENOW_REDIRECT_URI'
-          };
-          
-          const envVar = envVarMapping[toolName];
-          if (!envVar) {
-            console.warn(`No redirect URI environment variable defined for tool: ${toolName}`);
-            return '';
-          }
-          
-          return process.env[envVar] || '';
-        };
+        // CRITICAL FIX: Use database-aware redirect URI generation
+        let toolSpecificRedirectUri = '';
         
-        const defaultRedirectUris = {
-          grafana: integrationType === 'oauth2' ? getToolRedirectUri('grafana', integrationType) : '',
-          jenkins: integrationType === 'oidc' ? getToolRedirectUri('jenkins', integrationType) : '',
-          gitlab: integrationType === 'oidc' ? getToolRedirectUri('gitlab', integrationType) : '',
-          github: integrationType === 'oauth2' ? getToolRedirectUri('github', integrationType) : '',
-          sonarqube: integrationType === 'oidc' ? getToolRedirectUri('sonarqube', integrationType) : '',
-          argocd: integrationType === 'oidc' ? getToolRedirectUri('argocd', integrationType) : '',
-          terraform: integrationType === 'oidc' ? getToolRedirectUri('terraform', integrationType) : '',
-          prometheus: integrationType === 'oidc' ? getToolRedirectUri('prometheus', integrationType) : '',
-          kibana: integrationType === 'oidc' ? getToolRedirectUri('kibana', integrationType) : '',
-          snyk: integrationType === 'oidc' ? getToolRedirectUri('snyk', integrationType) : '',
-          jira: integrationType === 'saml' ? getToolRedirectUri('jira', integrationType) : '',
-          servicenow: integrationType === 'saml' ? getToolRedirectUri('servicenow', integrationType) : ''
-        };
+        try {
+          if (config.TOOL_SPECIFIC_PROTOCOLS) {
+            // Use our new protocol-aware function
+            toolSpecificRedirectUri = await generateToolRedirectUri(tool);
+            console.log(`🎯 Generated protocol-aware redirect URI for ${tool}: ${toolSpecificRedirectUri}`);
+          } else {
+            // Fallback to environment variables (original behavior)
+            const envVarMapping = {
+              grafana: 'GRAFANA_REDIRECT_URI',
+              jenkins: 'JENKINS_REDIRECT_URI', 
+              gitlab: 'GITLAB_REDIRECT_URI',
+              github: 'GITHUB_REDIRECT_URI',
+              sonarqube: 'SONARQUBE_REDIRECT_URI',
+              argocd: 'ARGOCD_REDIRECT_URI',
+              terraform: 'TERRAFORM_REDIRECT_URI',
+              prometheus: 'PROMETHEUS_REDIRECT_URI',
+              kibana: 'KIBANA_REDIRECT_URI',
+              snyk: 'SNYK_REDIRECT_URI',
+              jira: 'JIRA_REDIRECT_URI',
+              servicenow: 'SERVICENOW_REDIRECT_URI'
+            };
+            
+            const envVar = envVarMapping[tool];
+            if (envVar && process.env[envVar]) {
+              toolSpecificRedirectUri = process.env[envVar];
+              console.log(`🔄 Using environment redirect URI for ${tool}: ${toolSpecificRedirectUri}`);
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ Failed to generate tool-specific redirect URI for ${tool}:`, error.message);
+          toolSpecificRedirectUri = '';
+        }
         
         return {
           client_id: clientId,
           client_secret: clientSecret,
-          redirect_uri: defaultRedirectUris[tool] || ''
+          redirect_uri: toolSpecificRedirectUri
         };
       };
       
-      const clientCreds = getClientCredentials(tool, integrationType);
+      const clientCreds = await getClientCredentials(tool, integrationType);
       console.log(`🔑 Client credentials for ${tool}:`, { client_id: clientCreds.client_id, has_secret: !!clientCreds.client_secret });
       
       // Ensure client exists in Keycloak by calling admin-config service
