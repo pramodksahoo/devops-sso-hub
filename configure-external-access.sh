@@ -669,7 +669,9 @@ validate_oidc_configuration() {
         
         # Test 3: Check if sso-hub realm is accessible externally
         print_info "Step 3: Testing sso-hub realm accessibility..."
-        local external_realm_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/sso-hub"
+        # For HTTPS setups: Keycloak runs HTTP internally, even when accessed via HTTPS externally
+        # Direct port access should always use HTTP protocol
+        local external_realm_url="http://${EXTERNAL_HOST}:8080/realms/sso-hub"
         if ! curl -sf --connect-timeout 10 --max-time 30 "$external_realm_url" &>/dev/null; then
             print_warning "External SSO-Hub realm not accessible on attempt $attempt: $external_realm_url"
             if [ $attempt -eq $max_attempts ]; then
