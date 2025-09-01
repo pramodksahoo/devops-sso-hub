@@ -646,7 +646,8 @@ validate_oidc_configuration() {
         
         # Test 2: Check external network accessibility
         print_info "Step 2: Testing external network accessibility..."
-        local external_master_url="${EXTERNAL_PROTOCOL}://${EXTERNAL_HOST}:8080/realms/master"
+        # Note: Keycloak always runs on HTTP internally, even when HTTPS is configured via NGINX
+        local external_master_url="http://${EXTERNAL_HOST}:8080/realms/master"
         if ! curl -sf --connect-timeout 10 --max-time 30 "$external_master_url" &>/dev/null; then
             print_warning "External master realm not accessible on attempt $attempt"
             print_warning "URL tested: $external_master_url"
@@ -657,7 +658,7 @@ validate_oidc_configuration() {
                 print_error "  • Firewall blocking port 8080"
                 print_error "  • Network routing issues"
                 print_info "Try: curl -v http://localhost:8080/realms/master (should work)"
-                print_info "Try: curl -v $external_master_url (currently failing)"
+                print_info "Try: curl -v http://${EXTERNAL_HOST}:8080/realms/master (currently failing)"
                 return 1
             fi
             sleep 15

@@ -73,9 +73,10 @@ services:
       KC_DB_PASSWORD: ${KC_DB_PASSWORD:-keycloak_password}
       
       # Network configuration (Keycloak 25.0 production mode)  
-      # Use KC_HOSTNAME_URL for complete URL control
-      KC_HOSTNAME_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:8080
-      KC_HOSTNAME_ADMIN_URL: ${EXTERNAL_PROTOCOL:-http}://${EXTERNAL_HOST:-localhost}:8080
+      # For HTTPS setups, users access Keycloak through NGINX proxy, not directly
+      # For HTTP setups, users access Keycloak directly on port 8080
+      KC_HOSTNAME_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+      KC_HOSTNAME_ADMIN_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
@@ -973,6 +974,7 @@ services:
       - ./infra/nginx/logs:/var/log/nginx
       - ./infra/nginx/ssl:/etc/nginx/ssl:ro
       - ./infra/ssl-certs:/etc/ssl/certs/sso-hub:ro
+      - ./infra/letsencrypt:/etc/letsencrypt:ro
     networks:
       - sso-network
 

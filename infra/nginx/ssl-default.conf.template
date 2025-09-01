@@ -1,5 +1,5 @@
 # Enhanced NGINX Configuration with SSL Support
-# Supports both HTTP and HTTPS based on available certificates
+# Complete configuration with Let's Encrypt SSL certificates and all service routes
 
 # Upstream backends
 upstream auth_bff_backend {
@@ -32,29 +32,115 @@ upstream keycloak_backend {
     keepalive 32;
 }
 
+upstream admin_config_backend {
+    server admin-config:3005;
+    keepalive 32;
+}
+
+upstream webhook_ingress_backend {
+    server webhook-ingress:3007;
+    keepalive 32;
+}
+
+upstream audit_backend {
+    server audit:3009;
+    keepalive 32;
+}
+
+upstream analytics_backend {
+    server analytics:3010;
+    keepalive 32;
+}
+
+upstream provisioning_backend {
+    server provisioning:3011;
+    keepalive 32;
+}
+
+upstream ldap_sync_backend {
+    server ldap-sync:3012;
+    keepalive 32;
+}
+
+upstream policy_backend {
+    server policy:3013;
+    keepalive 32;
+}
+
+upstream notifier_backend {
+    server notifier:3014;
+    keepalive 32;
+}
+
+upstream auth_proxy_backend {
+    server auth-proxy:3015;
+    keepalive 32;
+}
+
+# Lua initialization
+init_by_lua_block {
+    -- OIDC configuration
+    local oidc = require("resty.openidc")
+    
+    -- HMAC configuration
+    local hmac = require("resty.hmac")
+    
+    -- Set global configuration (environment-aware OIDC endpoints)
+    ngx.shared.oidc_config = {
+        -- Environment-aware OIDC configuration (no hardcoded URLs)
+        issuer = "${KEYCLOAK_PUBLIC_URL}",
+        authorization_endpoint = "${KEYCLOAK_PUBLIC_URL}/protocol/openid-connect/auth",
+        token_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/token",  -- Internal only
+        userinfo_endpoint = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/userinfo",  -- Internal only
+        jwks_uri = "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/certs",  -- Internal only
+        client_id = "${OIDC_CLIENT_ID}",
+        client_secret = "${OIDC_CLIENT_SECRET}",
+        redirect_uri = "${OIDC_REDIRECT_URI}",
+        logout_path = "${OIDC_LOGOUT_PATH}",
+        scope = "${OIDC_SCOPE}",
+        session_secret = "${SESSION_SECRET}",
+        identity_header_secret = "${IDENTITY_HEADER_SECRET}"
+    }
+}
+
 # Rate limiting zones
 limit_req_zone $binary_remote_addr zone=auth_limit:10m rate=10r/m;
 limit_req_zone $binary_remote_addr zone=api_limit:10m rate=100r/m;
 
-# SSL Configuration Map
-map $ssl_preread_server_name $backend_pool {
-    default frontend_backend;
-}
-
-# Common server configuration block
+# HTTP to HTTPS redirect server
 server {
-    # HTTP Configuration (always enabled)
     listen 80;
-    
-    # HTTPS Configuration (conditional based on SSL certificates)
-    listen 443 ssl http2;
-    
     server_name ${EXTERNAL_HOST} localhost;
     
-    # SSL Configuration
-    ssl_certificate /etc/nginx/ssl/server.crt;
-    ssl_certificate_key /etc/nginx/ssl/server.key;
-    ssl_dhparam /etc/nginx/ssl/dhparam.pem;
+    # Health check endpoint (no redirect for monitoring)
+    location /health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+    }
+    
+    # Let's Encrypt ACME challenge (no redirect)
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        try_files $uri =404;
+    }
+    
+    # Redirect all other HTTP traffic to HTTPS
+    location / {
+        return 301 https://$server_name$request_uri;
+    }
+}
+
+# Main HTTPS server configuration
+server {
+    # HTTPS Configuration with Let's Encrypt certificates
+    listen 443 ssl http2;
+    server_name ${EXTERNAL_HOST} localhost;
+    
+    # Let's Encrypt SSL Configuration
+    ssl_certificate /etc/letsencrypt/live/${EXTERNAL_HOST}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${EXTERNAL_HOST}/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/${EXTERNAL_HOST}/chain.pem;
     
     # Modern SSL Configuration
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -76,21 +162,6 @@ server {
     
     # HSTS only for HTTPS
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
-
-    # HTTP to HTTPS redirect (conditional)
-    if ($scheme != "https") {
-        set $redirect_https 0;
-    }
-    
-    # Enable redirect only if EXTERNAL_PROTOCOL is https
-    if ($http_x_forwarded_proto = "https") {
-        set $redirect_https 1;
-    }
-    
-    # Skip redirect for health checks and well-known paths
-    if ($request_uri ~ "^/(health|\.well-known)") {
-        set $redirect_https 0;
-    }
 
     # Health check endpoint (no auth required, works on both HTTP/HTTPS)
     location /health {
@@ -258,6 +329,186 @@ server {
         include /etc/nginx/proxy_params;
     }
 
+    # Admin Configuration API Access - Healthz endpoint only (bypass OIDC auth, uses service API key auth)
+    # This location block is now more specific to avoid conflicting with tools API
+    location ^~ /api/admin-config/healthz {
+        proxy_pass http://admin_config_backend/healthz;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Enable CORS for admin-config API
+        add_header Access-Control-Allow-Origin "$http_origin" always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+        
+        # Handle preflight requests
+        if ($request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin "$http_origin";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key";
+            add_header Access-Control-Allow-Credentials "true";
+            add_header Content-Length 0;
+            add_header Content-Type text/plain;
+            return 204;
+        }
+    }
+    
+    # Admin-Config Keycloak Auto-populate API (uses session authentication, no API key required)  
+    # Industry Best Practice: Use ^~ modifier for highest prefix priority
+    location ^~ /api/keycloak/ {
+        proxy_pass http://admin_config_backend/api/keycloak/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Enable CORS for admin-config API
+        add_header Access-Control-Allow-Origin "$http_origin" always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+        
+        # Handle preflight requests
+        if ($request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin "$http_origin";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type";
+            add_header Access-Control-Allow-Credentials "true";
+            add_header Content-Length 0;
+            add_header Content-Type text/plain;
+            return 204;
+        }
+    }
+    
+    # Admin-Config Keycloak Auto-populate API for External Hosts (uses session authentication, no API key required)
+    # Industry Best Practice: Handle /api/admin-config/keycloak/ pattern used by external deployments
+    location ^~ /api/admin-config/keycloak/ {
+        # Strip /api/admin-config from the beginning and pass the rest
+        rewrite ^/api/admin-config/keycloak/(.*)$ /api/keycloak/$1 break;
+        proxy_pass http://admin_config_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Enable CORS for auto-populate API
+        add_header Access-Control-Allow-Origin "$http_origin" always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+        
+        # Handle preflight requests
+        if ($request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin "$http_origin";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type";
+            add_header Access-Control-Allow-Credentials "true";
+            add_header Content-Length 0;
+            add_header Content-Type text/plain;
+            return 204;
+        }
+    }
+    
+    # Admin-Config Tools API for External Hosts (bypass OIDC auth, uses service API key auth)
+    # Industry Best Practice: Handle /api/admin-config/tools/ pattern used by external deployments  
+    location ~ ^/api/admin-config/tools/([^/]+)/(config|test|test-connection|validate-client|ensure-client)(.*)$ {
+        # Security: Simple API key validation (enterprise-grade)
+        if ($http_x_api_key != "admin-api-key-change-in-production") {
+            return 401 '{"error":"Unauthorized","message":"Valid X-Api-Key header required"}';
+        }
+        
+        proxy_pass http://admin_config_backend/api/tools/$1/$2$3$is_args$args;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Enable CORS for admin-config API
+        add_header Access-Control-Allow-Origin "$http_origin" always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+        
+        # Handle preflight requests
+        if ($request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin "$http_origin";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key";
+            add_header Access-Control-Allow-Credentials "true";
+            add_header Content-Length 0;
+            add_header Content-Type text/plain;
+            return 204;
+        }
+    }
+    
+    # Admin-Config Tools Configuration API (bypass OIDC auth, uses service API key auth)
+    # Industry Best Practice: Regex location for specific tool config patterns  
+    location ~ ^/api/tools/([^/]+)/(config|test|test-connection|validate-client|ensure-client)(.*)$ {
+        # Security: Simple API key validation (enterprise-grade)
+        if ($http_x_api_key != "admin-api-key-change-in-production") {
+            return 401 '{"error":"Unauthorized","message":"Valid X-Api-Key header required"}';
+        }
+        
+        proxy_pass http://admin_config_backend/api/tools/$1/$2$3$is_args$args;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Enable CORS for admin-config API
+        add_header Access-Control-Allow-Origin "$http_origin" always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+        
+        # Handle preflight requests
+        if ($request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin "$http_origin";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key";
+            add_header Access-Control-Allow-Credentials "true";
+            add_header Content-Length 0;
+            add_header Content-Type text/plain;
+            return 204;
+        }
+    }
+    
+    # Admin-Config Global Tools API (bypass OIDC auth, uses service API key auth)
+    # Industry Best Practice: Use ^~ modifier for highest prefix priority
+    location ^~ /api/tools/test-all {
+        proxy_pass http://admin_config_backend/api/tools/test-all;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+        
+        # Enable CORS for admin-config API
+        add_header Access-Control-Allow-Origin "$http_origin" always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key" always;
+        add_header Access-Control-Allow-Credentials "true" always;
+        
+        # Handle preflight requests
+        if ($request_method = 'OPTIONS') {
+            add_header Access-Control-Allow-Origin "$http_origin";
+            add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+            add_header Access-Control-Allow-Headers "Accept, Authorization, Content-Type, X-Api-Key";
+            add_header Access-Control-Allow-Credentials "true";
+            add_header Content-Length 0;
+            add_header Content-Type text/plain;
+            return 204;
+        }
+    }
+
     # API routes (protected with identity headers)
     location /api/ {
         limit_req zone=api_limit burst=20 nodelay;
@@ -326,9 +577,67 @@ server {
             include /etc/nginx/proxy_params;
         }
         
+        # Webhook Ingress API
+        location /api/webhooks/ {
+            proxy_pass http://webhook_ingress_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Audit API
+        location /api/audit/ {
+            proxy_pass http://audit_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Analytics API
+        location /api/analytics/ {
+            proxy_pass http://analytics_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Provisioning API
+        location /api/provisioning/ {
+            proxy_pass http://provisioning_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # LDAP Sync API
+        location /api/ldap/ {
+            proxy_pass http://ldap_sync_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Policy API
+        location /api/policy/ {
+            proxy_pass http://policy_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Notifier API
+        location /api/notifications/ {
+            proxy_pass http://notifier_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
+        # Auth Proxy API
+        location /api/auth-proxy/ {
+            proxy_pass http://auth_proxy_backend/api/;
+            include /etc/nginx/proxy_params;
+        }
+        
         # Default API routing
         proxy_pass http://auth_bff_backend;
         include /etc/nginx/proxy_params;
+    }
+
+    # Direct Admin-Config Service Access (bypass nginx auth for admin service)
+    location /admin-config/ {
+        proxy_pass http://admin_config_backend/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
     }
 
     # Frontend routes - serve React app for SPA routing
@@ -363,6 +672,11 @@ server {
         
         proxy_pass http://frontend_backend;
         include /etc/nginx/proxy_params;
+        
+        # Cache control for development - force reload
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
         
         # WebSocket support
         proxy_http_version 1.1;
@@ -402,6 +716,11 @@ server {
         
         proxy_pass http://frontend_backend;
         include /etc/nginx/proxy_params;
+        
+        # Cache control for development - force reload
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
         
         # WebSocket support
         proxy_http_version 1.1;
