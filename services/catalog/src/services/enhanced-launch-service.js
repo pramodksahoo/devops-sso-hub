@@ -448,11 +448,11 @@ class EnhancedLaunchService {
     
     // For direct launch with OIDC, Grafana handles authentication itself
     if (authConfig.direct_launch || authConfig.grafana_url) {
-      // Just redirect to Grafana - it will handle OIDC flow internally
-      let targetUrl = authConfig.grafana_url || baseUrl || 'http://localhost:3100';
+      // CRITICAL FIX: Use pure tool URL resolution independent of environment overrides
+      let targetUrl = this.getPureToolUrl(tool) || 'http://localhost:3100';
       
       // Ensure we're using the configured URL which should preserve the protocol
-      this.fastify.log.info(`📍 Using Grafana base URL for direct launch: ${targetUrl}`);
+      this.fastify.log.info(`📍 Using pure Grafana URL for direct launch: ${targetUrl}`);
       
       // Add any dashboard or folder navigation
       if (context?.dashboard_uid) {
@@ -482,10 +482,10 @@ class EnhancedLaunchService {
     // CRITICAL FIX: Ensure redirect URI preserves protocol from Grafana URL
     let redirectUri = authConfig.redirect_uri;
     if (!redirectUri) {
-      // Construct redirect URI with protocol consistency
-      const grafanaUrl = authConfig.grafana_url || baseUrl || 'http://localhost:3100';
+      // CRITICAL FIX: Use pure tool URL resolution to avoid environment variable override
+      const grafanaUrl = this.getPureToolUrl(tool) || 'http://localhost:3100';
       
-      this.fastify.log.info(`🔍 Constructing redirect URI from grafana URL: ${grafanaUrl}`);
+      this.fastify.log.info(`🔍 Constructing redirect URI from PURE grafana URL: ${grafanaUrl}`);
       this.fastify.log.info(`🔍 Auth config for protocol consistency: ${JSON.stringify(authConfig)}`);
       
       redirectUri = this.ensureProtocolConsistency(grafanaUrl, '/login/generic_oauth', authConfig);
@@ -667,7 +667,83 @@ class EnhancedLaunchService {
   }
 
   getToolBaseUrl(tool) {
-    return this.config.TOOL_BASE_URLS[tool.slug] || tool.base_url || `https://${tool.slug}.local`;
+    // CRITICAL FIX: Prioritize database-configured URLs over environment defaults
+    // Tool URLs should be completely independent of SSO-Hub host protocol
+    
+    this.fastify.log.info(`🔍 getToolBaseUrl for tool: ${tool.name} (${tool.slug})`);
+    this.fastify.log.info(`🔍 Tool database values: base_url=${tool.base_url}, auth_config.grafana_url=${tool.auth_config?.grafana_url}`);
+    
+    // Priority 1: Tool-specific URL from auth_config (highest priority)
+    if (tool.auth_config?.grafana_url && tool.slug === 'grafana') {
+      this.fastify.log.info(`✅ Using auth_config.grafana_url: ${tool.auth_config.grafana_url}`);
+      return tool.auth_config.grafana_url;
+    }
+    
+    // Check for other tool-specific auth config URLs
+    const toolSpecificUrlField = this.getToolSpecificUrlField(tool.slug);
+    if (toolSpecificUrlField && tool.auth_config?.[toolSpecificUrlField]) {
+      this.fastify.log.info(`✅ Using auth_config.${toolSpecificUrlField}: ${tool.auth_config[toolSpecificUrlField]}`);
+      return tool.auth_config[toolSpecificUrlField];
+    }
+    
+    // Priority 2: Database-configured base_url (preserves admin-configured protocol)
+    if (tool.base_url) {
+      this.fastify.log.info(`✅ Using database base_url: ${tool.base_url}`);
+      return tool.base_url;
+    }
+    
+    // Priority 3: Environment variables (only as fallback for development)
+    if (this.config.TOOL_BASE_URLS[tool.slug]) {
+      this.fastify.log.info(`⚠️ Fallback to environment TOOL_BASE_URL: ${this.config.TOOL_BASE_URLS[tool.slug]}`);
+      return this.config.TOOL_BASE_URLS[tool.slug];
+    }
+    
+    // Priority 4: Safe fallback (only for completely unconfigured tools)
+    const fallbackUrl = `https://${tool.slug}.local`;
+    this.fastify.log.warn(`⚠️ Using fallback URL (tool not properly configured): ${fallbackUrl}`);
+    return fallbackUrl;
+  }
+
+  getToolSpecificUrlField(toolSlug) {
+    // Map tool slugs to their specific auth_config URL fields
+    const urlFieldMap = {
+      'grafana': 'grafana_url',
+      'jenkins': 'jenkins_url', 
+      'argocd': 'argocd_url',
+      'sonarqube': 'sonarqube_url',
+      'kibana': 'kibana_url',
+      'prometheus': 'prometheus_url',
+      'terraform': 'terraform_url',
+      'github': 'github_url',
+      'gitlab': 'gitlab_url'
+    };
+    
+    return urlFieldMap[toolSlug] || null;
+  }
+
+  getPureToolUrl(tool) {
+    // CRITICAL FIX: Pure tool URL resolution that completely ignores environment variable overrides
+    // This ensures tool URLs are 100% independent of SSO-Hub host protocol or environment settings
+    
+    this.fastify.log.info(`🔍 getPureToolUrl for tool: ${tool.name} (${tool.slug})`);
+    
+    // Priority 1: Tool-specific URL from auth_config (database-stored, user-configured)
+    const toolSpecificUrlField = this.getToolSpecificUrlField(tool.slug);
+    if (toolSpecificUrlField && tool.auth_config?.[toolSpecificUrlField]) {
+      const toolUrl = tool.auth_config[toolSpecificUrlField];
+      this.fastify.log.info(`✅ getPureToolUrl: Using auth_config.${toolSpecificUrlField}: ${toolUrl}`);
+      return toolUrl;
+    }
+    
+    // Priority 2: Database base_url (admin-configured, preserves original protocol)  
+    if (tool.base_url) {
+      this.fastify.log.info(`✅ getPureToolUrl: Using database base_url: ${tool.base_url}`);
+      return tool.base_url;
+    }
+    
+    // Priority 3: NO ENVIRONMENT VARIABLE FALLBACK - this prevents protocol corruption
+    this.fastify.log.warn(`⚠️ getPureToolUrl: No pure tool URL found for ${tool.name} - tool not properly configured`);
+    return null;
   }
 
   getToolSpecificInstructions(tool, launchType) {
