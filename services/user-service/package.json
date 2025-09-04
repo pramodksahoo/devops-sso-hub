@@ -1,0 +1,37 @@
+{
+  "name": "@sso-hub/user-service",
+  "version": "1.0.0",
+  "description": "User management service for SSO Hub - handles user profiles, preferences, and local user data",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index-working.js",
+    "dev": "node --watch src/index.js",
+    "migrate": "node src/migrate.js"
+  },
+  "dependencies": {
+    "fastify": "^4.26.0",
+    "@fastify/postgres": "^5.2.2",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/swagger": "^8.14.0",
+    "@fastify/swagger-ui": "^1.10.0",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "crypto": "^1.0.1",
+    "pino": "^8.17.2",
+    "zod": "^3.22.4",
+    "bcryptjs": "^2.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3"
+  },
+  "keywords": [
+    "sso",
+    "user-management",
+    "fastify",
+    "postgresql",
+    "microservice"
+  ],
+  "author": "SSO Hub Team",
+  "license": "MIT"
+}

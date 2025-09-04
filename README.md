@@ -19,13 +19,27 @@
 
 **Built by DevOps engineers, for DevOps engineers.** SSO Hub eliminates the "SSO Premium" with a production-ready platform that integrates natively with your entire DevOps toolchain.
 
+### 🎯 **One-Command Setup**
 ```bash
-# Get started in 5 minutes
+# Clone and deploy in one command
 git clone https://github.com/pramodksahoo/devops-sso-hub.git
 cd devops-sso-hub
-cp .env.example .env
+./setup.sh
+
+# 🌐 For external access (IP/domain), run:
+./configure-external-access.sh
+```
+
+### ⚡ **Manual Setup** (3 commands)
+```bash
+# 1. Clone and configure
+git clone https://github.com/pramodksahoo/devops-sso-hub.git
+cd devops-sso-hub && cp env.example .env
+
+# 2. Deploy all services
 docker-compose up -d
-# Access your SSO Hub at http://localhost:3000
+
+# 3. Access at http://localhost:3000 (admin/admin_secure_password_123)
 ```
 
 ### 🎯 **Why SSO Hub?**
@@ -42,31 +56,100 @@ docker-compose up -d
 
 ## ⚡ **5-Minute Quick Start**
 
-### Prerequisites
-- Docker and Docker Compose
-- 8GB RAM minimum
-- Ports 3000, 8080 available
+### 📋 **Prerequisites**
+- **Docker & Docker Compose** (latest versions recommended)
+- **8GB RAM** minimum (16GB recommended for production)
+- **Available Ports**: 3000 (frontend), 8080 (Keycloak), 5432 (PostgreSQL), 6379 (Redis)
 
-### Get Running
+### 🚀 **Option 1: Automated Setup** (Recommended)
 ```bash
-# 1. Clone and start
-git clone https://github.com/sso-hub/sso-hub.git
-cd sso-hub
-cp .env.example .env
+# Clone and auto-configure everything
+git clone https://github.com/pramodksahoo/devops-sso-hub.git
+cd devops-sso-hub
 
-# 2. Launch SSO Hub (takes ~2 minutes)
-docker-compose up -d
+# Interactive setup with external access configuration
+./setup.sh
 
-# 3. Watch the magic happen
-docker-compose logs -f
+# Or completely unattended installation
+./setup.sh --auto
 ```
 
-### Access Your SSO Hub
-- **🎨 Dashboard**: http://localhost:3000 (admin/admin123)
-- **🔐 Keycloak**: http://localhost:8080 (admin/admin)
-- **📚 API Docs**: http://localhost:3006/docs
+### ⚙️ **Option 2: Manual Setup** 
+```bash
+# 1. Clone and prepare environment
+git clone https://github.com/pramodksahoo/devops-sso-hub.git
+cd devops-sso-hub
+cp env.example .env
 
-**Next**: [Add your first DevOps tool →](docs/getting-started/quickstart.md)
+# 2. Configure external access (optional - see External Access section below)
+# For IP/domain access: ./configure-external-access.sh
+# Or manually edit .env: EXTERNAL_HOST=your.ip.address
+
+# 3. Deploy all 14 microservices (~2 minutes)
+docker-compose up -d
+
+# 4. Validate deployment
+./validate-deployment.sh
+```
+
+### 🌐 **Access Your SSO Hub**
+After deployment completes (2-3 minutes):
+
+| **Service** | **URL** | **Credentials** |
+|-------------|---------|----------------|
+| **🎨 Main Dashboard** | http://localhost:3000 | admin / admin_secure_password_123 |
+| **🔐 Keycloak Admin** | http://localhost:8080 | admin / admin_secure_password_123 |
+| **📚 API Documentation** | http://localhost:3006/docs | Same as above |
+| **📊 Health Monitoring** | http://localhost:3004 | Same as above |
+
+### 🌍 **External Access Configuration**
+
+**Option 1: Interactive Setup** (Recommended)
+```bash
+./configure-external-access.sh
+# Select deployment type: localhost/IP/domain/custom
+# Automatically detects your IP address
+# Updates all configuration files
+```
+
+**Option 2: Manual Configuration**
+```bash
+# Edit .env file before running setup.sh:
+EXTERNAL_HOST=192.168.1.100    # or your.domain.com
+EXTERNAL_PROTOCOL=http         # or https
+EXTERNAL_PORT=                 # or :8080 for custom port
+
+# Then run setup
+./setup.sh
+```
+
+📚 **[Complete External Access Guide →](EXTERNAL_ACCESS.md)** - Detailed configuration examples, DNS setup, HTTPS, cloud deployment, and troubleshooting.
+
+### ✅ **Validate Your Deployment**
+```bash
+# Comprehensive validation of all services
+./validate-deployment.sh
+
+# Check specific service health
+docker-compose ps
+curl http://localhost:3002/healthz  # Auth BFF
+curl http://localhost:3006/healthz  # Catalog Service
+```
+
+### 🔧 **Production Features**
+- ✅ **SSL/HTTPS Ready**: Automatic certificate handling
+- ✅ **Environment Variables**: Zero hardcoded URLs
+- ✅ **External Access**: IP addresses and custom domains  
+- ✅ **Health Monitoring**: Built-in service health checks
+- ✅ **Security Hardened**: CORS, rate limiting, input validation
+- ✅ **Scalable Architecture**: 14 independent microservices
+- ✅ **Comprehensive Logging**: Structured logs with correlation IDs
+
+### 🎯 **Next Steps**
+1. **Configure Tools**: Add your DevOps tools in the admin panel
+2. **Setup Users**: Configure authentication and user management  
+3. **Integration**: Connect Jenkins, GitLab, Grafana, and more
+4. **Documentation**: See [complete setup guide →](docs/getting-started/quickstart.md)
 
 ## 🛠️ **Native DevOps Integration**
 
@@ -118,6 +201,55 @@ docker-compose logs -f
 | **Policy** | 3013 | ✅ Production | Access control, compliance |
 | **Notifier** | 3014 | ✅ Production | Multi-channel alerts |
 | **Auth Proxy** | 3015 | ✅ Production | **NEW: Seamless SSO proxy** |
+
+## 🔧 **Configuration Management & Automation**
+
+SSO Hub features industry-leading configuration management with automatic Keycloak client synchronization:
+
+### Dynamic Configuration Updates
+- **UI Changes → Automatic Sync**: When admins update tool URLs in the dashboard, Keycloak clients update automatically
+- **Environment Variables First**: All tool URLs, redirect URIs, and endpoints configurable via `.env` file
+- **Zero Hardcoded Values**: Complete elimination of hardcoded localhost URLs for production deployments
+
+### Automation APIs
+```bash
+# Bulk Configuration API - Perfect for DevOps automation
+curl -X PUT http://localhost:3002/api/admin/tools/bulk-config \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d '{
+    "tools": [
+      {
+        "slug": "grafana",
+        "base_url": "https://grafana.company.com",
+        "integration_type": "oauth2",
+        "auth_config": {
+          "client_id": "grafana-sso",
+          "client_secret": "...",
+          "redirect_uri": "https://grafana.company.com/login/generic_oauth"
+        }
+      }
+    ]
+  }'
+```
+
+### Environment Configuration
+```bash
+# Tool Redirect URIs - All configurable via environment
+GRAFANA_REDIRECT_URI=https://grafana.company.com/login/generic_oauth
+JENKINS_REDIRECT_URI=https://jenkins.company.com/securityRealm/finishLogin
+GITLAB_REDIRECT_URI=https://gitlab.company.com/-/users/auth/openid_connect/callback
+
+# External Access Configuration
+EXTERNAL_HOST=sso.company.com
+EXTERNAL_PROTOCOL=https
+CORS_ORIGIN=https://sso.company.com
+```
+
+### Best Practices Implementation
+- **Configuration Validation**: Schema validation for all tool configurations
+- **Error Recovery**: Non-blocking error handling for high availability  
+- **Comprehensive Logging**: Detailed audit logs for all configuration changes
+- **Database-Keycloak Sync**: Real-time synchronization between database and Keycloak
 
 ## 🎯 **What Makes SSO Hub Different?**
 
@@ -478,6 +610,120 @@ curl http://localhost:3006/healthz  # Catalog
 curl http://localhost:3004/healthz  # Tools Health
 curl http://localhost:3011/healthz  # Provisioning
 ```
+
+## 🔧 **Troubleshooting**
+
+### 🚨 **Common Issues & Solutions**
+
+#### **Services Won't Start**
+```bash
+# Check Docker daemon is running
+docker info
+
+# Check port conflicts
+netstat -tuln | grep -E ':(3000|8080|5432|6379)'
+
+# Free up ports and retry
+docker-compose down --volumes
+docker-compose up -d
+```
+
+#### **Frontend Shows "NetworkError" / Cannot Load**
+```bash
+# Fix: Update environment configuration
+./configure-external-access.sh
+docker-compose down && docker-compose build --no-cache frontend
+docker-compose up -d
+```
+
+#### **Cannot Access Externally (IP/Domain)**
+```bash
+# Check firewall (Linux)
+sudo ufw allow 3000
+sudo ufw allow 8080
+
+# Check firewall (macOS)  
+sudo pfctl -d  # Disable firewall temporarily
+
+# Test connectivity
+curl http://YOUR_IP:3000
+telnet YOUR_IP 8080
+```
+
+#### **Authentication Not Working**
+```bash
+# Reset Keycloak configuration
+docker-compose restart keycloak
+docker-compose logs keycloak
+
+# Check OIDC endpoints
+curl http://localhost:8080/realms/sso-hub/.well-known/openid_configuration
+```
+
+#### **Database Connection Issues**
+```bash
+# Reset databases
+docker-compose down --volumes
+docker-compose up -d postgres keycloak-postgres
+sleep 30
+docker-compose up -d
+```
+
+### 🔍 **Debug Commands**
+```bash
+# View all container status
+docker-compose ps
+
+# View logs for specific service  
+docker-compose logs -f keycloak
+docker-compose logs -f auth-bff
+docker-compose logs -f frontend
+
+# View all logs
+docker-compose logs -f
+
+# Restart specific service
+docker-compose restart frontend
+docker-compose restart auth-bff
+
+# Complete reset (DESTRUCTIVE - removes all data)
+docker-compose down --volumes --rmi all
+docker system prune -f
+./setup.sh
+```
+
+### 🌐 **External Access Issues**
+
+#### **Can't Access from Other Machines**
+1. **Check Configuration**:
+   ```bash
+   cat .env | grep EXTERNAL
+   ./validate-deployment.sh
+   ```
+
+2. **Verify Network Settings**:
+   - Ensure `EXTERNAL_HOST` is set to server IP/domain
+   - Check firewall allows ports 80, 3000, 8080
+   - Verify DNS A record (for domains)
+
+3. **Cloud Provider Setup**:
+   - **AWS**: Configure Security Groups for ports 80, 8080, 3000
+   - **GCP**: Configure Firewall Rules for http-server tag
+   - **Azure**: Configure Network Security Groups
+
+#### **SSL/HTTPS Issues**
+```bash
+# For production domains, configure SSL:
+# 1. Get SSL certificates (Let's Encrypt, CloudFlare, etc.)
+# 2. Update NGINX configuration in infra/nginx/
+# 3. Set EXTERNAL_PROTOCOL=https in .env
+```
+
+### 📞 **Getting Help**
+- **Documentation**: [Complete docs](docs/)
+- **GitHub Issues**: [Report bugs](https://github.com/pramodksahoo/devops-sso-hub/issues)  
+- **Discussions**: [Community help](https://github.com/pramodksahoo/devops-sso-hub/discussions)
+- **Validation**: Run `./validate-deployment.sh` for diagnosis
 
 ## 🤝 Contributing
 

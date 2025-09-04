@@ -1,0 +1,52 @@
+{
+  "name": "@sso-hub/webhook-ingress",
+  "version": "1.0.0",
+  "description": "Comprehensive webhook ingress service for all DevOps tools - handles tool-specific webhook processing, signature validation, and event routing",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test src/**/*.test.js"
+  },
+  "dependencies": {
+    "fastify": "4.27.0",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/postgres": "^5.2.2",
+    "@fastify/swagger": "^8.14.0",
+    "@fastify/swagger-ui": "^1.10.0",
+    "pino": "^8.17.2",
+    "zod": "^3.22.4",
+    "crypto": "^1.0.1",
+    "axios": "^1.6.0",
+    "nodemailer": "^6.9.0",
+    "@slack/web-api": "^6.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "typescript": "^5.3.3"
+  },
+  "keywords": [
+    "sso",
+    "webhooks",
+    "devops-tools",
+    "github",
+    "gitlab",
+    "jenkins",
+    "argocd",
+    "terraform",
+    "sonarqube",
+    "grafana",
+    "prometheus",
+    "kibana",
+    "snyk",
+    "jira",
+    "servicenow",
+    "fastify",
+    "microservice"
+  ],
+  "author": "SSO Hub Team",
+  "license": "MIT"
+}

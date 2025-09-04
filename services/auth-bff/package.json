@@ -1,0 +1,25 @@
+{
+  "name": "@sso-hub/auth-bff",
+  "version": "1.0.0",
+  "description": "Backend for Frontend service handling authentication and session management",
+  "type": "commonjs",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^9.4.0",
+    "@fastify/cors": "^9.0.1",
+    "@fastify/jwt": "^8.0.1",
+    "fastify": "4.27.0",
+    "openid-client": "^5.6.4",
+    "pino": "^8.17.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}

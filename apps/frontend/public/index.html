@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSO Hub - Phase 1 Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 30px;
+        }
+        .auth-status {
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 2px solid;
+        }
+        .authenticated {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .unauthenticated {
+            background: #f8d7da;
+            border-color: #dc3545;
+            color: #721c24;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            margin: 10px 5px;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        .btn-danger {
+            background: #dc3545;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .user-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .headers-info {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+            font-size: 14px;
+        }
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .feature {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #28a745;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+        .badge-list {
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+            color: white;
+        }
+        .badge.role {
+            background: #007bff;
+        }
+        .badge.group {
+            background: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 SSO Hub - Phase 1</h1>
+            <p>Authentication & Session Management Demo</p>
+        </div>
+        
+        <div class="content">
+            <div id="auth-status" class="auth-status loading">
+                <div class="loading">🔄 Checking authentication status...</div>
+            </div>
+            
+            <div id="user-content" style="display: none;">
+                <div class="user-info">
+                    <h3>👤 User Information</h3>
+                    <div id="user-details"></div>
+                </div>
+                
+                <div class="user-info">
+                    <h3>🔑 Identity Headers</h3>
+                    <div id="identity-headers" class="headers-info"></div>
+                </div>
+                
+                <button onclick="logout()" class="btn btn-danger">🚪 Logout</button>
+                <button onclick="testEcho()" class="btn">🔍 Test Echo Service</button>
+                <button onclick="refreshAuth()" class="btn">🔄 Refresh Status</button>
+            </div>
+            
+            <div id="public-content">
+                <h2>✨ Phase 1 Features Implemented</h2>
+                <div class="feature-list">
+                    <div class="feature">
+                        <h4>🛡️ BFF Pattern</h4>
+                        <p>Backend for Frontend with no tokens in browser storage</p>
+                    </div>
+                    <div class="feature">
+                        <h4>🍪 Secure Sessions</h4>
+                        <p>httpOnly cookies with SameSite=strict</p>
+                    </div>
+                    <div class="feature">
+                        <h4>🔐 PKCE OIDC</h4>
+                        <p>Secure authorization code flow with PKCE</p>
+                    </div>
+                    <div class="feature">
+                        <h4>🔑 Identity Headers</h4>
+                        <p>HMAC-signed headers for service communication</p>
+                    </div>
+                    <div class="feature">
+                        <h4>⚡ Redis Sessions</h4>
+                        <p>Scalable session storage with Redis</p>
+                    </div>
+                    <div class="feature">
+                        <h4>🔒 Security Headers</h4>
+                        <p>CORS, CSP, and other security protections</p>
+                    </div>
+                </div>
+                
+                <div style="text-align: center; margin-top: 30px;">
+                    <button onclick="startLogin()" class="btn">🔑 Login with SSO Hub</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let userSession = null;
+
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('http://localhost:3002/auth/me', {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    userSession = await response.json();
+                    showAuthenticatedView();
+                } else {
+                    showUnauthenticatedView();
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                showUnauthenticatedView();
+            }
+        }
+
+        function showAuthenticatedView() {
+            const authStatus = document.getElementById('auth-status');
+            const userContent = document.getElementById('user-content');
+            const userDetails = document.getElementById('user-details');
+
+            authStatus.className = 'auth-status authenticated';
+            authStatus.innerHTML = '✅ Authenticated - Welcome to SSO Hub!';
+            
+            userContent.style.display = 'block';
+            
+            const roles = userSession.user.roles || [];
+            const groups = userSession.user.groups || [];
+            
+            userDetails.innerHTML = `
+                <p><strong>📧 Email:</strong> ${userSession.user.email}</p>
+                <p><strong>👤 Name:</strong> ${userSession.user.name || 'N/A'}</p>
+                <p><strong>🔑 Subject:</strong> ${userSession.user.sub}</p>
+                <p><strong>🎭 Roles:</strong> <span class="badge-list">${roles.length ? roles.map(r => `<span class="badge role">${r}</span>`).join(' ') : 'None'}</span></p>
+                <p><strong>👥 Groups:</strong> <span class="badge-list">${groups.length ? groups.map(g => `<span class="badge group">${g}</span>`).join(' ') : 'None'}</span></p>
+                <p><strong>⏰ Session Created:</strong> ${new Date(userSession.session.createdAt).toLocaleString()}</p>
+                <p><strong>⏳ Session Expires:</strong> ${new Date(userSession.session.expiresAt).toLocaleString()}</p>
+            `;
+
+            loadIdentityHeaders();
+        }
+
+        function showUnauthenticatedView() {
+            const authStatus = document.getElementById('auth-status');
+            const userContent = document.getElementById('user-content');
+
+            authStatus.className = 'auth-status unauthenticated';
+            authStatus.innerHTML = '❌ Not authenticated - Please login to continue';
+            
+            userContent.style.display = 'none';
+        }
+
+        async function loadIdentityHeaders() {
+            try {
+                const response = await fetch('http://localhost:3002/auth/headers', {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const headersDiv = document.getElementById('identity-headers');
+                    
+                    const formatted = Object.entries(data.headers)
+                        .map(([key, value]) => `${key}: ${value}`)
+                        .join('\\n');
+                    
+                    headersDiv.textContent = formatted;
+                }
+            } catch (error) {
+                console.error('Failed to load identity headers:', error);
+            }
+        }
+
+        async function logout() {
+            try {
+                const response = await fetch('http://localhost:3002/auth/logout', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Logout response:', data);
+                    
+                    // Redirect to homepage after successful logout
+                    if (data.redirectUrl) {
+                        window.location.href = data.redirectUrl;
+                    } else {
+                        // Fallback: refresh page to show login state
+                        window.location.reload();
+                    }
+                }
+            } catch (error) {
+                console.error('Logout failed:', error);
+                // Fallback: refresh page
+                window.location.reload();
+            }
+        }
+
+        async function testEcho() {
+            try {
+                // Test echo service through Auth BFF to see identity headers in action
+                const response = await fetch('http://localhost:3001/echo', {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    alert('Echo service response received! Check console for details.');
+                    console.log('Echo service response:', data);
+                } else {
+                    alert('Echo service test failed. Check if service is running.');
+                }
+            } catch (error) {
+                console.error('Echo service test failed:', error);
+                alert('Echo service test failed. Check console for details.');
+            }
+        }
+
+        async function startLogin() {
+            // Direct redirect to Auth BFF login (NGINX proxy handles hostname resolution)
+            window.location.href = 'http://localhost:3002/auth/login';
+        }
+
+        function refreshAuth() {
+            checkAuthStatus();
+        }
+
+        // Check authentication status when page loads
+        checkAuthStatus();
+        
+        // Refresh auth status periodically
+        setInterval(checkAuthStatus, 30000);
+    </script>
+</body>
+</html>

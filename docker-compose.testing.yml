@@ -1,0 +1,176 @@
+# =================================================================
+# SSO Hub - Testing Environment with Grafana and SonarQube
+# =================================================================
+# This compose file adds testing tools to verify SSO integration
+# Run with: docker-compose -f docker-compose.yml -f docker-compose.testing.yml up
+
+services:
+  # Reference to keycloak service from main docker-compose.yml
+  # keycloak:
+    # This ensures keycloak is available to the testing services
+
+  # Grafana for testing Generic OAuth (OIDC) integration
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sso-grafana-test
+    environment:
+      # Basic Grafana configuration
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-grafana_admin_pass}
+      
+      # Generic OAuth (OIDC) Configuration for Keycloak
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: "SSO Hub"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: ${GRAFANA_OIDC_CLIENT_ID:-grafana-client}
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${GRAFANA_OIDC_CLIENT_SECRET:-grafana-client-secret}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid email profile roles"
+      # Use keycloak hostname for container-to-container communication
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "http://localhost:8080/realms/sso-hub/protocol/openid-connect/auth"
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/token"
+      GF_AUTH_GENERIC_OAUTH_API_URL: "http://keycloak:8080/realms/sso-hub/protocol/openid-connect/userinfo"
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "false"
+      
+      # Auth Proxy Configuration for Seamless SSO
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: "X-Auth-User"
+      GF_AUTH_PROXY_HEADER_PROPERTY: "email"
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_AUTH_PROXY_HEADERS: "Email:X-Auth-Email Name:X-Auth-Name Role:X-Auth-Roles"
+      GF_AUTH_PROXY_ENABLE_LOGIN_TOKEN: "true"
+      # Additional configuration for proper OIDC flow
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'user') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_NAME: "email"
+      GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH: "email"
+      GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: "name"
+      GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: "preferred_username"
+      GF_AUTH_GENERIC_OAUTH_TLS_SKIP_VERIFY_INSECURE: "true"
+      GF_AUTH_GENERIC_OAUTH_USE_PKCE: "false"
+      
+      
+      # Security settings
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SECURITY_COOKIE_SAMESITE: "lax"
+      GF_SERVER_ROOT_URL: "http://localhost:3100"
+      
+      # Disable user registration except via OAuth
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_AUTO_ASSIGN_ORG: "true"
+      GF_USERS_AUTO_ASSIGN_ORG_ROLE: "Editor"
+      
+      # Anonymous access settings
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      
+      # Session settings
+      GF_SESSION_PROVIDER: "redis"
+      GF_SESSION_PROVIDER_CONFIG: "addr=redis:6379,pool_size=100,db=grafana"
+      
+      # Logging
+      GF_LOG_LEVEL: "info"
+      GF_LOG_MODE: "console"
+    ports:
+      - "3100:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - grafana_logs:/var/log/grafana
+    networks:
+      - agentic-devops-sso_sso-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # # SonarQube for testing OIDC integration
+  # sonarqube:
+  #   image: sonarqube:community
+  #   container_name: sso-sonarqube-test
+  #   environment:
+  #     # Database configuration
+  #     SONAR_JDBC_URL: "jdbc:postgresql://postgres:5432/sonarqube"
+  #     SONAR_JDBC_USERNAME: ${POSTGRES_USER:-sso_user}
+  #     SONAR_JDBC_PASSWORD: ${POSTGRES_PASSWORD:-sso_password}
+      
+  #     # OIDC Configuration for Keycloak
+  #     sonar.auth.oidc.enabled: "true"
+  #     sonar.auth.oidc.providerConfiguration: "http://keycloak:8080/realms/sso-hub/.well-known/openid_configuration"
+  #     sonar.auth.oidc.clientId.secured: ${SONARQUBE_OIDC_CLIENT_ID:-sonarqube-client}
+  #     sonar.auth.oidc.clientSecret.secured: ${SONARQUBE_OIDC_CLIENT_SECRET:-sonarqube-client-secret}
+  #     sonar.auth.oidc.loginButtonText: "Log in with Keycloak SSO"
+  #     sonar.auth.oidc.groupsSync: "true"
+  #     sonar.auth.oidc.groupsSync.claimName: "groups"
+      
+  #     # User provisioning
+  #     sonar.auth.oidc.allowUsersToSignUp: "true"
+  #     sonar.auth.oidc.userNameAttribute: "preferred_username"
+  #     sonar.auth.oidc.emailAttribute: "email"
+  #     sonar.auth.oidc.nameAttribute: "name"
+      
+  #     # JVM settings for SonarQube
+  #     SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      
+  #     # Security settings
+  #     sonar.forceAuthentication: "true"
+  #     sonar.security.realm: "OIDC"
+  #   ports:
+  #     - "9001:9000"
+  #   volumes:
+  #     - sonarqube_data:/opt/sonarqube/data
+  #     - sonarqube_logs:/opt/sonarqube/logs
+  #     - sonarqube_extensions:/opt/sonarqube/extensions
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     keycloak:
+  #       condition: service_healthy
+  #   networks:
+  #     - agent-devops-sso_sso-network
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"' || exit 1"]
+  #     interval: 60s
+  #     timeout: 30s
+  #     retries: 5
+  #     start_period: 120s
+  #   ulimits:
+  #     memlock:
+  #       soft: -1
+  #       hard: -1
+  #     nofile:
+  #       soft: 65536
+  #       hard: 65536
+
+  # # PostgreSQL initialization for SonarQube database
+  # sonarqube-db-init:
+  #   image: postgres:16-alpine
+  #   container_name: sso-sonarqube-db-init
+  #   environment:
+  #     PGPASSWORD: ${POSTGRES_PASSWORD:-sso_password}
+  #   command: >
+  #     sh -c "
+  #       sleep 10 &&
+  #       psql -h postgres -U ${POSTGRES_USER:-sso_user} -d ${POSTGRES_DB:-sso_hub} -c \"CREATE DATABASE sonarqube OWNER ${POSTGRES_USER:-sso_user};\" || echo 'Database already exists'
+  #     "
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - sso-network
+
+volumes:
+  grafana_data:
+    driver: local
+  grafana_logs:
+    driver: local
+  # sonarqube_data:
+  #   driver: local
+  # sonarqube_logs:
+  #   driver: local
+  # sonarqube_extensions:
+  #   driver: local
+
+# Network is inherited from main docker-compose.yml
+networks:
+  agentic-devops-sso_sso-network:
+    external: true
